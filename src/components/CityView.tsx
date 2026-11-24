@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Award,
+  Banknote,
   BedDouble,
   Beer,
   BookMarked,
@@ -12,6 +13,7 @@ import {
   MapPin,
   Newspaper,
   RefreshCw,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Users,
@@ -21,14 +23,17 @@ import {
   ESSENCE_BOOKS,
   ESSENCES,
   FLOORS,
+  getMaxLoanAmount,
+  getNextRankPromotion,
   isMainCharacterUnlocked,
   ITEMS,
   PARTY_ROSTER,
   RACES,
   SYNERGY_BONUSES,
 } from '../data/loreData';
+import { getAuctionBuyPrice } from '../engine/cityActions';
 import { getBuyPrice, getSellPrice } from '../engine/gameEngine';
-import { CityId, EssenceBookTier, FloorId, GameState } from '../types/game';
+import { CityId, EssenceBookTier, FloorId, GameState, PartyTactic } from '../types/game';
 
 interface CityViewProps {
   state: GameState;
@@ -48,6 +53,9 @@ interface CityViewProps {
   onRestInn: () => void;
   onAdvanceClosedCycle: () => void;
   onEnterLabyrinth: (floor: FloorId) => void;
+  onEnterTemple100: () => void;
+  onSetPartyTactic: (tactic: PartyTactic) => void;
+  onAwakenParty: (memberId: string) => void;
   onSwitchCity: (city: CityId) => void;
   onOpenCommunity: () => void;
   onRefreshNews: () => void;
@@ -56,6 +64,10 @@ interface CityViewProps {
   onBuyRoundTavern: () => void;
   onBuyEssenceBook: (tier: EssenceBookTier) => void;
   onRerollMercenaries: () => void;
+  onPromoteRank: () => void;
+  onRegisterEssence: (essenceId: string) => void;
+  onTakeLoan: (amount: number) => void;
+  onRepayLoan: () => void;
 }
 
 type CityTab = 'hub' | 'inn' | 'market' | 'party' | 'temple';
@@ -89,6 +101,13 @@ const NOARK_SHOP_IDS = [
   'healing_potion',
 ];
 
+const RELIC_SHOP_IDS = [
+  'idium_mace',
+  'wyvern_boots',
+  'pain_stone_relic',
+  'underworld_lantern',
+];
+
 export function CityView({
   state,
   onBuyItem,
@@ -107,6 +126,9 @@ export function CityView({
   onRestInn,
   onAdvanceClosedCycle,
   onEnterLabyrinth,
+  onEnterTemple100,
+  onSetPartyTactic,
+  onAwakenParty,
   onSwitchCity,
   onOpenCommunity,
   onRefreshNews,
@@ -115,6 +137,10 @@ export function CityView({
   onBuyRoundTavern,
   onBuyEssenceBook,
   onRerollMercenaries,
+  onPromoteRank,
+  onRegisterEssence,
+  onTakeLoan,
+  onRepayLoan,
 }: CityViewProps) {
   const [activeTab, setActiveTab] = useState<CityTab>('hub');
   const [selectedFloor, setSelectedFloor] = useState<FloorId>(state.currentFloor);
@@ -196,22 +222,12 @@ export function CityView({
 
       {activeTab === 'hub' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <div
-            className="stat-box"
-            style={{
-              padding: 14,
-              borderColor:
-                state.cityId === 'noark'
-                  ? 'rgba(168, 85, 247, 0.5)'
-                  : 'rgba(245, 158, 11, 0.45)',
-              background:
-                state.cityId === 'noark'
-                  ? 'linear-gradient(135deg, rgba(109, 40, 217, 0.16), rgba(16, 22, 35, 0.9))'
-                  : 'linear-gradient(135deg, rgba(217, 119, 6, 0.14), rgba(16, 22, 35, 0.9))',
-            }}
-          >
+          <div className={`city-hero-banner ${state.cityId === 'noark' ? 'city-hero-banner-noark' : ''}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#fbbf24' }}>
+              <div
+                className="font-display"
+                style={{ fontWeight: 700, fontSize: '1.08rem', color: 'var(--accent-bright)' }}
+              >
                 {state.cityId === 'noark'
                   ? 'เมืองใต้ดินโนอาร์ค (เมืองแห่งสัตว์ร้าย)'
                   : 'เมืองบนพื้นผิว: ลาฟโดเนีย'}{' '}
@@ -237,15 +253,28 @@ export function CityView({
               ))}
             </div>
 
-            <p style={{ fontSize: '0.92rem', color: '#dbe4f0', margin: '0 0 12px' }}>
+            <p style={{ fontSize: '0.92rem', color: 'var(--text)', margin: '0 0 12px' }}>
               <strong>{FLOORS[selectedFloor].thaiName}:</strong> {FLOORS[selectedFloor].description}{' '}
               (แนะนำ Lv.{FLOORS[selectedFloor].recommendedLevel}+)
             </p>
 
             {state.labyrinthOpenDaysLeft > 0 ? (
-              <button className="btn btn-primary" onClick={() => onEnterLabyrinth(selectedFloor)}>
-                <Compass size={17} /> เข้าสู่ {FLOORS[selectedFloor].thaiName} (-1 วัน)
-              </button>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button className="btn btn-primary" onClick={() => onEnterLabyrinth(selectedFloor)}>
+                  <Compass size={17} /> เข้าสู่ {FLOORS[selectedFloor].thaiName} (-1 วัน)
+                </button>
+                {(state.discoveredFloors.includes(4) || state.player.explorerRank <= 6) && (
+                  <button
+                    type="button"
+                    className="btn btn-lore"
+                    disabled={state.player.riftStones < 2 && state.gold < 120}
+                    onClick={onEnterTemple100}
+                    title="ต้องใช้ 2 Rift Stone หรือ 120 Gold เพื่อเปิดประตูสู่วิหารร้อยสี"
+                  >
+                    <Sparkles size={16} /> วิหารร้อยสี (2 RS หรือ 120G)
+                  </button>
+                )}
+              </div>
             ) : (
               <button className="btn btn-lore" onClick={onAdvanceClosedCycle}>
                 รอเขาวงกตเปิดรอบถัดไป (ข้าม 21 วัน)
@@ -262,11 +291,11 @@ export function CityView({
               justifyContent: 'space-between',
               alignItems: 'center',
               gap: 10,
-              borderColor: 'rgba(56, 189, 248, 0.35)',
+              borderColor: 'var(--border-gold)',
             }}
           >
-            <div style={{ fontSize: '0.88rem', color: '#dbe4f0', flex: '1 1 280px' }}>
-              <strong style={{ color: '#7dd3fc', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6 }}>
+            <div style={{ fontSize: '0.88rem', color: 'var(--text)', flex: '1 1 280px' }}>
+              <strong style={{ color: 'var(--accent-bright)', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 6 }}>
                 <Newspaper size={14} /> ข่าวสารประจำวัน:
               </strong>
               {state.dailyNews}
@@ -570,6 +599,48 @@ export function CityView({
                   );
                 })}
               </div>
+
+              <div className="stat-box" style={{ padding: 12, borderColor: 'rgba(159, 122, 234, 0.45)' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.94rem', color: '#e9d8fd', marginBottom: 8 }}>
+                  คลังวัตถุโบราณและอาวุธปราบวิญญาณ (ใช้ Gold + Rift Stone · คุณมี {state.player.riftStones} Rift Stone)
+                </div>
+                <div className="shop-list">
+                  {RELIC_SHOP_IDS.map((id) => {
+                    const item = ITEMS[id];
+                    const price = getBuyPrice(state, id);
+                    const rsCost = item.riftStoneCost ?? 0;
+                    const ownedQty =
+                      state.player.inventory.find((e) => e.item.id === id)?.quantity ?? 0;
+                    return (
+                      <div key={id} className="shop-item" style={{ borderColor: 'rgba(168, 85, 247, 0.4)' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fde68a' }}>
+                              {item.name}
+                            </span>
+                            <span className={ownedQty > 0 ? 'badge badge-success' : 'badge'}>
+                              ในกระเป๋า: {ownedQty}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: 4 }}>
+                            {item.description}
+                          </div>
+                          <div style={{ fontSize: '0.83rem', color: '#e9d8fd', marginTop: 4 }}>
+                            ราคา {price} G + {rsCost} Rift Stone · น้ำหนัก {item.weight} kg
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-sm btn-lore"
+                          disabled={state.gold < price || state.player.riftStones < rsCost}
+                          onClick={() => onBuyItem(id, 1)}
+                        >
+                          แลกซื้อ ({price}G + {rsCost} RS)
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </>
           ) : (
             <div style={{ display: 'grid', gap: 12 }}>
@@ -609,6 +680,7 @@ export function CityView({
                 {state.auctionListings.map((listing) => {
                   const ess = ESSENCES[listing.essenceId];
                   const syn = SYNERGY_BONUSES[ess.synergyTag];
+                  const finalPrice = getAuctionBuyPrice(listing.price, state.player.explorerRank);
                   return (
                     <div
                       key={listing.id}
@@ -638,10 +710,10 @@ export function CityView({
                       </div>
                       <button
                         className="btn btn-sm btn-lore"
-                        disabled={Boolean(listing.sold) || state.gold < listing.price}
+                        disabled={Boolean(listing.sold) || state.gold < finalPrice}
                         onClick={() => onBuyAuctionEssence(listing.id)}
                       >
-                        {listing.sold ? 'ประมูลไปแล้ว' : `ชนะประมูลทันที (${listing.price} G)`}
+                        {listing.sold ? 'ประมูลไปแล้ว' : `ชนะประมูลทันที (${finalPrice} G)`}
                       </button>
                     </div>
                   );
@@ -679,6 +751,28 @@ export function CityView({
             >
               <RefreshCw size={14} /> หาคนเพิ่มในร้านเหล้า (10 G)
             </button>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--accent-bright)' }}>
+              กลยุทธ์ปาร์ตี้:
+            </span>
+            {(
+              [
+                ['aggressive', 'บุก (+25% ดาเมจเพื่อน)'],
+                ['balanced', 'สมดุล (มาตรฐาน)'],
+                ['defensive', 'ป้องกัน (-15% ดาเมจเข้าแทงค์)'],
+              ] as const
+            ).map(([tKey, label]) => (
+              <button
+                key={tKey}
+                type="button"
+                className={`btn btn-sm ${state.partyTactic === tKey ? 'btn-primary' : ''}`}
+                onClick={() => onSetPartyTactic(tKey)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -736,6 +830,8 @@ export function CityView({
               Object.values(PARTY_ROSTER).map((member) => {
                 const isUnlocked = isMainCharacterUnlocked(state, member.id);
                 const isHired = state.player.party.some((p) => p.id === member.id);
+                const trust = state.partyTrust[member.id] ?? 0;
+                const isAwakened = state.awakenedPartyIds.includes(member.id);
 
                 if (!isUnlocked) {
                   return (
@@ -783,22 +879,39 @@ export function CityView({
                       </div>
                     </div>
                     <div style={{ fontSize: '0.86rem', color: '#9aa9c1' }}>{member.description}</div>
-                    <div style={{ fontSize: '0.84rem', color: '#cbd5e1' }}>
-                      HP {member.maxHp} · ATK {member.attack} · DEF {member.defense}
+                    <div style={{ fontSize: '0.84rem', color: '#cbd5e1', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      <span>HP {member.maxHp} · ATK {member.attack} · DEF {member.defense}</span>
+                      <span className="badge" style={{ background: '#2d3748', color: '#fde68a' }}>
+                        Trust {trust}/100
+                      </span>
+                      {isAwakened && <span className="badge badge-success">ปลุกพลังแล้ว</span>}
                     </div>
-                    {isHired ? (
-                      <button className="btn btn-sm" onClick={() => onDismissParty(member.id)}>
-                        ยกเลิกสัญญา
-                      </button>
-                    ) : (
-                      <button
-                        className="btn btn-sm btn-primary"
-                        disabled={state.player.party.length >= 2 || state.gold < member.hireCost}
-                        onClick={() => onHireParty(member.id)}
-                      >
-                        ทำสัญญา ({member.hireCost} Gold)
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {isHired ? (
+                        <button className="btn btn-sm" onClick={() => onDismissParty(member.id)}>
+                          ยกเลิกสัญญา
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          disabled={state.player.party.length >= 2 || state.gold < member.hireCost}
+                          onClick={() => onHireParty(member.id)}
+                        >
+                          ทำสัญญา ({member.hireCost} Gold)
+                        </button>
+                      )}
+                      {!isAwakened && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-lore"
+                          disabled={trust < 60}
+                          onClick={() => onAwakenParty(member.id)}
+                          title="ต้องมีความเชื่อใจ Trust 60 ขึ้นไป (พากลับเมืองรอด +20 หรือมอบแก่นแท้ให้ดูดซับ +25)"
+                        >
+                          {trust >= 60 ? 'ปลุกพลัง (Awaken)' : `ปลุกพลัง (${trust}/60)`}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -846,126 +959,255 @@ export function CityView({
         </div>
       )}
 
-      {activeTab === 'temple' && (
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div className="shop-list">
-            <div className="shop-item">
-              <div>
-                <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.98rem' }}>
-                  ภาษีราชวงศ์ลาฟโดเนีย
-                </div>
-                <div style={{ fontSize: '0.88rem', color: '#9aa9c1', marginTop: 4 }}>
-                  {state.taxDue > 0
-                    ? `ค้างชำระ ${state.taxDue} Gold (กำหนดภายในวันที่ ${state.taxDeadlineDay})`
-                    : 'ชำระภาษีรอบปัจจุบันครบถ้วนแล้ว'}
-                </div>
-              </div>
-              <button
-                className="btn btn-sm btn-primary"
-                disabled={state.taxDue <= 0 || state.gold < state.taxDue}
-                onClick={onPayTax}
-              >
-                ชำระภาษี ({state.taxDue} Gold)
-              </button>
-            </div>
+      {activeTab === 'temple' && (() => {
+        const promo = getNextRankPromotion(state);
+        const maxLoan = getMaxLoanAmount(state.player.explorerRank);
+        const isZeroInterest = state.player.raceId === 'elf';
+        const unregisteredEssences =
+          state.player.explorerRank <= 6
+            ? state.player.essences.filter(
+                (e) => !state.player.registeredEssenceIds.includes(e.id)
+              )
+            : [];
 
-            <div className="shop-item">
-              <div>
-                <div style={{ fontWeight: 700, color: '#93c5fd', fontSize: '0.98rem' }}>
-                  พิธีล้างคำสาปที่วิหาร
-                </div>
-                <div style={{ fontSize: '0.88rem', color: '#9aa9c1', marginTop: 4 }}>
-                  คำสาปสะสม: {state.player.curses}/15 (ทุก 3 คำสาปลดสเตตัส · ครบ 12 เสียเลือดต่อเทิร์น)
-                </div>
-              </div>
-              <button
-                className="btn btn-sm"
-                disabled={state.player.curses <= 0 || state.gold < state.player.curses * 15}
-                onClick={onPurifyCurses}
-              >
-                ล้างคำสาป ({state.player.curses * 15} Gold)
-              </button>
-            </div>
-          </div>
-
-          {state.player.essences.length > 0 && (
-            <div className="stat-box" style={{ padding: 12 }}>
-              <div style={{ fontWeight: 700, fontSize: '0.94rem', marginBottom: 8 }}>
-                ถอดแก่นแท้ที่วิหาร (100 Gold / ชิ้น)
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {state.player.essences.map((ess) => (
-                  <button
-                    key={ess.id}
-                    className="btn btn-sm"
-                    disabled={state.gold < 100}
-                    onClick={() => onExtractEssence(ess.id)}
-                  >
-                    ถอด {ess.name} (100 G)
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="stat-box" style={{ padding: 14, display: 'grid', gap: 10 }}>
-            <div style={{ fontWeight: 700, color: '#e9d5ff', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.96rem' }}>
-              <BookMarked size={16} /> กิลด์นักผจญภัย — ข่าวกรอง &amp; ตำราสารานุกรมแก่นแท้
-            </div>
-
-            {!state.unlockedCorpseGolemLore ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: '0.88rem', color: '#9aa9c1' }}>
-                  ซื้อข่าวกรองกฎชั้น 4–7 และวิธีรับมือแคนนิบาโล
-                </span>
-                <button className="btn btn-sm btn-lore" onClick={onBuyRank7Lore}>
-                  ซื้อข่าวกรองชั้น 1–7 (80 Gold)
-                </button>
-              </div>
-            ) : (
-              <ul style={{ margin: 0, paddingLeft: 20, fontSize: '0.86rem', color: '#cbd5e1', display: 'grid', gap: 4 }}>
-                <li>
-                  <strong>แคนนิบาโล (Rank 7):</strong> หากแช่อยู่ชั้นเดิมนานเกินไป จะโผล่ออกมาล่าคุณ!
-                </li>
-                <li>
-                  <strong>ชั้น 4 ป่าดอปเปลแกงเกอร์:</strong> ร่างโคลนไม่ดรอปของ ต้องปราบตัวจริง
-                </li>
-                <li>
-                  <strong>ชั้น 5:</strong> ต้องมีแก่นแท้อย่างน้อย 5 ชิ้น ไม่งั้นโดนตีแรงขึ้น +30%
-                </li>
-                <li>
-                  <strong>ชั้น 6 มหาสมุทรใหญ่:</strong> ต้องซื้อใบอนุญาตเดินเรือ (350G) ก่อนลง
-                </li>
-              </ul>
-            )}
-
-            <div className="shop-list" style={{ marginTop: 4 }}>
-              {ESSENCE_BOOKS.map((book) => {
-                const owned = state.purchasedEssenceBooks.includes(book.tier);
-                return (
-                  <div key={book.tier} className="shop-item">
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#93c5fd' }}>
-                        {book.title}
+        return (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div className="shop-list">
+              <div className="shop-item" style={{ borderColor: 'var(--border-gold)' }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--accent-bright)', fontSize: '0.96rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <ShieldCheck size={16} /> แรงค์นักสำรวจปัจจุบัน: Rank {state.player.explorerRank}
+                  </div>
+                  {promo ? (
+                    <>
+                      <div style={{ fontSize: '0.84rem', color: 'var(--text)', marginTop: 4 }}>
+                        เป้าหมายถัดไป <strong>Rank {promo.toRank}</strong>: {promo.requirementText}
                       </div>
-                      <div style={{ fontSize: '0.82rem', color: '#9aa9c1', marginTop: 3 }}>
-                        {book.description}
+                      <div style={{ fontSize: '0.8rem', color: '#c6f6d5', marginTop: 3 }}>
+                        สิทธิประโยชน์: {promo.perkText}
                       </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '0.84rem', color: '#c6f6d5', marginTop: 4 }}>
+                      คุณบรรลุแรงค์สูงสุดในกิลด์สาขาลาฟโดเนีย (Rank 5) พร้อมสิทธิ์ขุนนางแล้ว!
                     </div>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={owned || state.gold < book.price}
-                      onClick={() => onBuyEssenceBook(book.tier)}
-                    >
-                      {owned ? 'บันทึกแล้ว (ยืนยันโดยกิลด์)' : `ซื้อตำรา (${book.price} G)`}
+                  )}
+                </div>
+                {promo && (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={!promo.eligible || state.gold < promo.fee}
+                    onClick={onPromoteRank}
+                  >
+                    สอบเลื่อนขั้น Rank {promo.toRank} ({promo.fee} Gold)
+                  </button>
+                )}
+              </div>
+
+              <div className="shop-item">
+                <div>
+                  <div style={{ fontWeight: 700, color: '#9ae6b4', fontSize: '0.96rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Banknote size={16} /> ธนาคาร &amp; สินเชื่อลาฟโดเนีย
+                  </div>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--muted)', marginTop: 4 }}>
+                    วงเงินกู้สูงสุดตามแรงค์: <strong style={{ color: 'var(--text)' }}>{maxLoan} G</strong> ·{' '}
+                    {isZeroInterest ? (
+                      <span style={{ color: '#c6f6d5' }}>ดอกเบี้ย 0% (สิทธิ์เผ่า Elf/Fairy)</span>
+                    ) : (
+                      <span>ดอกเบี้ย 20% (คืนภายใน 28 วัน)</span>
+                    )}
+                  </div>
+                  {state.loanDebt > 0 && (
+                    <div style={{ fontSize: '0.84rem', color: '#feb2b2', marginTop: 4 }}>
+                      หนี้คงค้าง: <strong>{state.loanDebt} Gold</strong> (ครบกำหนดวันที่ {state.loanDueDay})
+                    </div>
+                  )}
+                </div>
+                {state.loanDebt > 0 ? (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={state.gold <= 0}
+                    onClick={onRepayLoan}
+                  >
+                    ชำระหนี้ ({Math.min(state.gold, state.loanDebt)} Gold)
+                  </button>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <button className="btn btn-sm" onClick={() => onTakeLoan(150)}>
+                      กู้ 150 G
+                    </button>
+                    <button className="btn btn-sm btn-lore" onClick={() => onTakeLoan(maxLoan)}>
+                      กู้สูงสุด ({maxLoan} G)
                     </button>
                   </div>
-                );
-              })}
+                )}
+              </div>
+            </div>
+
+            {unregisteredEssences.length > 0 && (
+              <div className="stat-box" style={{ padding: 12, borderColor: 'rgba(229, 62, 62, 0.55)' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#feb2b2', marginBottom: 6 }}>
+                  กฎกิลด์แรงค์ 6+ (Ch.284): แก่นแท้ที่ยังไม่ลงทะเบียน (25 Gold/ชิ้น)
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: 8 }}>
+                  การแอบใช้สกิลแก่นแท้ที่ไม่ได้ลงทะเบียนมีโอกาสเพิ่มค่าความสงสัยวิญญาณร้าย (+3/ครั้ง)
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {unregisteredEssences.map((ess) => (
+                    <button
+                      key={ess.id}
+                      className="btn btn-sm"
+                      disabled={state.gold < 25}
+                      onClick={() => onRegisterEssence(ess.id)}
+                    >
+                      ลงทะเบียน {ess.name} (25 G)
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="shop-list">
+              <div className="shop-item">
+                <div>
+                  <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.98rem' }}>
+                    ภาษีราชวงศ์ลาฟโดเนีย
+                  </div>
+                  <div style={{ fontSize: '0.88rem', color: 'var(--muted)', marginTop: 4 }}>
+                    {state.taxDue > 0
+                      ? `ค้างชำระ ${state.taxDue} Gold (กำหนดภายในวันที่ ${state.taxDeadlineDay})`
+                      : 'ชำระภาษีรอบปัจจุบันครบถ้วนแล้ว'}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-sm btn-primary"
+                  disabled={state.taxDue <= 0 || state.gold < state.taxDue}
+                  onClick={onPayTax}
+                >
+                  ชำระภาษี ({state.taxDue} Gold)
+                </button>
+              </div>
+
+              <div className="shop-item">
+                <div>
+                  <div style={{ fontWeight: 700, color: '#90cdf4', fontSize: '0.98rem' }}>
+                    พิธีล้างคำสาปที่วิหาร
+                  </div>
+                  <div style={{ fontSize: '0.88rem', color: 'var(--muted)', marginTop: 4 }}>
+                    คำสาปสะสม: {state.player.curses}/15 (ทุก 3 คำสาปลดสเตตัส · ครบ 12 เสียเลือดต่อเทิร์น)
+                  </div>
+                </div>
+                <button
+                  className="btn btn-sm"
+                  disabled={state.player.curses <= 0 || state.gold < state.player.curses * 15}
+                  onClick={onPurifyCurses}
+                >
+                  ล้างคำสาป ({state.player.curses * 15} Gold)
+                </button>
+              </div>
+            </div>
+
+            {state.player.essences.length > 0 && (
+              <div className="stat-box" style={{ padding: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.94rem', marginBottom: 8 }}>
+                  ถอดแก่นแท้ที่วิหาร (100 Gold / ชิ้น)
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--accent-bright)' }}>
+              กลยุทธ์ปาร์ตี้:
+            </span>
+            {(
+              [
+                ['aggressive', 'บุก (+25% ดาเมจเพื่อน)'],
+                ['balanced', 'สมดุล (มาตรฐาน)'],
+                ['defensive', 'ป้องกัน (-15% ดาเมจเข้าแทงค์)'],
+              ] as const
+            ).map(([tKey, label]) => (
+              <button
+                key={tKey}
+                type="button"
+                className={`btn btn-sm ${state.partyTactic === tKey ? 'btn-primary' : ''}`}
+                onClick={() => onSetPartyTactic(tKey)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {state.player.essences.map((ess) => (
+                    <button
+                      key={ess.id}
+                      className="btn btn-sm"
+                      disabled={state.gold < 100}
+                      onClick={() => onExtractEssence(ess.id)}
+                    >
+                      ถอด {ess.name} (100 G)
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="stat-box" style={{ padding: 14, display: 'grid', gap: 10 }}>
+              <div style={{ fontWeight: 700, color: '#e9d8fd', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.96rem' }}>
+                <BookMarked size={16} /> กิลด์นักผจญภัย — ข่าวกรอง &amp; ตำราสารานุกรมแก่นแท้
+              </div>
+
+              {!state.unlockedCorpseGolemLore ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: '0.88rem', color: 'var(--muted)' }}>
+                    ซื้อข่าวกรองกฎชั้น 4–7 และวิธีรับมือแคนนิบาโล
+                  </span>
+                  <button className="btn btn-sm btn-lore" onClick={onBuyRank7Lore}>
+                    ซื้อข่าวกรองชั้น 1–7 (80 Gold)
+                  </button>
+                </div>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: '0.86rem', color: 'var(--text)', display: 'grid', gap: 4 }}>
+                  <li>
+                    <strong>แคนนิบาโล (Rank 7):</strong> หากแช่อยู่ชั้นเดิมนานเกินไป จะโผล่ออกมาล่าคุณ!
+                  </li>
+                  <li>
+                    <strong>ชั้น 4 ป่าดอปเปลแกงเกอร์:</strong> ร่างโคลนไม่ดรอปของ ต้องปราบตัวจริง
+                  </li>
+                  <li>
+                    <strong>ชั้น 5:</strong> ต้องมีแก่นแท้อย่างน้อย 5 ชิ้น ไม่งั้นโดนตีแรงขึ้น +30%
+                  </li>
+                  <li>
+                    <strong>ชั้น 6 มหาสมุทรใหญ่:</strong> ต้องซื้อใบอนุญาตเดินเรือ (350G) ก่อนลง
+                  </li>
+                </ul>
+              )}
+
+              <div className="shop-list" style={{ marginTop: 4 }}>
+                {ESSENCE_BOOKS.map((book) => {
+                  const owned = state.purchasedEssenceBooks.includes(book.tier);
+                  return (
+                    <div key={book.tier} className="shop-item">
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#90cdf4' }}>
+                          {book.title}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: 3 }}>
+                          {book.description}
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={owned || state.gold < book.price}
+                        onClick={() => onBuyEssenceBook(book.tier)}
+                      >
+                        {owned ? 'บันทึกแล้ว (ยืนยันโดยกิลด์)' : `ซื้อตำรา (${book.price} G)`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

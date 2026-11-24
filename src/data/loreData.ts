@@ -4,6 +4,7 @@ import {
   Essence,
   EssenceBookTier,
   EssenceSynergyTag,
+  ExplorerRank,
   FloorDefinition,
   FloorId,
   GameState,
@@ -259,6 +260,70 @@ export const PARTY_ROSTER: Record<string, PartyMemberTemplate> = {
     unlockHint: 'ปลดล็อกเมื่อค้นพบเขาวงกตชั้นที่ 3 หรือซื้อข้อมูล/ตำราแก่นแท้จากกิลด์อย่างน้อย 1 รายการ',
     description: 'ร่ายเวทระดับแปด [หอกน้ำแข็ง] โจมตีทะลุเกราะระยะไกล (ดูดซับแก่นแท้ไม่ได้)',
   },
+  ainar: {
+    id: 'ainar',
+    name: 'ไอนาร์ เฟรเนลิน (Ainar)',
+    race: 'Barbarian',
+    role: 'striker',
+    roleLabel: 'นักรบหญิงคนเถื่อน (+ATK ทีม)',
+    portraitUrl: '/images/party_ainar.jpg',
+    maxHp: 115,
+    attack: 20,
+    defense: 5,
+    hireCost: 135,
+    canAbsorbEssence: true,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อค้นพบเขาวงกตชั้นที่ 2 หรือมีแก่นแท้ Mimic / Bone Knight',
+    description: 'นักรบหญิงเผ่าคนเถื่อนผู้ดุดัน ช่วยเพิ่ม +2 Attack (+4 เมื่อปลุกพลัง) ให้ผู้เล่นตลอดการรบ!',
+  },
+  dwalki: {
+    id: 'dwalki',
+    name: 'ลิออล ดวาลกี้ (Dwalki)',
+    race: 'Human',
+    role: 'mage',
+    roleLabel: 'จอมเวทระดับ 8 (Ice Spear)',
+    portraitUrl: '/images/party_dwalki.jpg',
+    maxHp: 68,
+    attack: 22,
+    defense: 3,
+    hireCost: 145,
+    canAbsorbEssence: false,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อเลื่อนเป็นนักสำรวจ Rank ≤ 7 หรือเคลียร์ภารกิจ "บททดสอบแรกในถ้ำคริสตัล"',
+    description: 'จอมเวทระดับ 8 แห่งเขาวงกต ร่าย [หอกน้ำแข็ง] เจาะเกราะและโจมตีร่างวิญญาณได้อย่างมีประสิทธิภาพ',
+  },
+  amelia: {
+    id: 'amelia',
+    name: 'อมีเลีย เรนเวลส์ (Amelia)',
+    race: 'Human',
+    role: 'striker',
+    roleLabel: 'มือสังหารโนอาร์ค',
+    portraitUrl: '/images/party_amelia.jpg',
+    maxHp: 96,
+    attack: 23,
+    defense: 6,
+    hireCost: 160,
+    canAbsorbEssence: true,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อเปิดเส้นทางสู่เมืองโนอาร์ค และค้นพบเขาวงกตชั้นที่ 4',
+    description: 'นักสำรวจลึกลับจากเมืองใต้ดินโนอาร์ค โจมตีจุดตายเฉียบคมและไม่กลัวคำสาปวิญญาณร้าย',
+  },
+  raven: {
+    id: 'raven',
+    name: 'อาร์รูอา เรเวน (Raven)',
+    race: 'Human',
+    role: 'mage',
+    roleLabel: 'มหาจอมเวท (กำแพงทอง)',
+    portraitUrl: '/images/party_raven.jpg',
+    maxHp: 78,
+    attack: 27,
+    defense: 5,
+    hireCost: 210,
+    canAbsorbEssence: false,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อค้นพบเขาวงกตชั้นที่ 6 หรือเลื่อนเป็นนักสำรวจ Rank ≤ 6',
+    description: 'ร่ายเวท [เทพลงทัณฑ์] โจมตีวิญญาณและลดความเสียหายที่ผู้เล่นได้รับลง 15% ด้วย [กำแพงทองพันชั้น]!',
+  },
 };
 
 export function isMainCharacterUnlocked(state: GameState, memberId: string): boolean {
@@ -278,6 +343,20 @@ export function isMainCharacterUnlocked(state: GameState, memberId: string): boo
         state.unlockedCorpseGolemLore ||
         state.purchasedEssenceBooks.length > 0
       );
+    case 'ainar':
+      return (
+        state.discoveredFloors.includes(2) ||
+        state.player.essences.some((e) => e.id === 'mimic' || e.id === 'bone_knight')
+      );
+    case 'dwalki':
+      return (
+        state.player.explorerRank <= 7 ||
+        state.claimedQuestIds.includes('quest_crystal_survivor')
+      );
+    case 'amelia':
+      return state.unlockedNoark && state.discoveredFloors.includes(4);
+    case 'raven':
+      return state.discoveredFloors.includes(6) || state.player.explorerRank <= 6;
     default:
       return true;
   }
@@ -426,6 +505,80 @@ export function generateRandomMercenaries(
   }
 
   return result;
+}
+
+export function getMaxLoanAmount(rank: ExplorerRank): number {
+  switch (rank) {
+    case 9:
+      return 250;
+    case 8:
+      return 350;
+    case 7:
+      return 500;
+    case 6:
+      return 900;
+    case 5:
+      return 1500;
+  }
+}
+
+export interface ExplorerRankPromotionInfo {
+  fromRank: ExplorerRank;
+  toRank: ExplorerRank;
+  fee: number;
+  requirementText: string;
+  perkText: string;
+  eligible: boolean;
+}
+
+export function getNextRankPromotion(state: GameState): ExplorerRankPromotionInfo | null {
+  const r = state.player.explorerRank;
+  if (r === 9) {
+    return {
+      fromRank: 9,
+      toRank: 8,
+      fee: 40,
+      requirementText: 'กำจัดมอนสเตอร์ต่างชนิด ≥ 2 ชนิด และดูดซับแก่นแท้อย่างน้อย 1 ชิ้น',
+      perkText: 'ขาย Magic Stone แพงขึ้น +5% · วงเงินกู้ 350 G',
+      eligible:
+        state.player.defeatedMonsterIds.length >= 2 && state.player.essences.length >= 1,
+    };
+  }
+  if (r === 8) {
+    return {
+      fromRank: 8,
+      toRank: 7,
+      fee: 90,
+      requirementText: 'ปลดล็อกเขาวงกตชั้นที่ 2 และกำจัดมอนสเตอร์ต่างชนิด ≥ 6 ชนิด',
+      perkText: 'วงเงินกู้ 500 G · ลดราคาประมูลซื้อ -5%',
+      eligible:
+        state.discoveredFloors.includes(2) && state.player.defeatedMonsterIds.length >= 6,
+    };
+  }
+  if (r === 7) {
+    return {
+      fromRank: 7,
+      toRank: 6,
+      fee: 180,
+      requirementText: 'ปลดล็อกเขาวงกตชั้นที่ 4 และดูดซับแก่นแท้ ≥ 3 ชิ้น',
+      perkText: 'ขาย Magic Stone +10% · วงเงินกู้ 900 G · กิลด์บันทึกแก่นแท้ของคุณ (Ch.284)',
+      eligible:
+        state.discoveredFloors.includes(4) && state.player.essences.length >= 3,
+    };
+  }
+  if (r === 6) {
+    return {
+      fromRank: 6,
+      toRank: 5,
+      fee: 350,
+      requirementText: 'ปราบ [วิญญาณไร้เปลวเพลิง] ชั้น 5 และมีแก่นแท้ระดับ 5 ขึ้นไปอย่างน้อย 1 ชิ้น',
+      perkText: 'สิทธิ์ขุนนาง! ขายหินเวท +15% · ซื้อของลาฟโดเนียถูกกว่า -10% · วงเงินกู้ 1,500 G',
+      eligible:
+        state.player.defeatedMonsterIds.includes('flameless_spirit') &&
+        state.player.essences.some((e) => e.rank <= 5),
+    };
+  }
+  return null;
 }
 
 export const ESSENCES: Record<string, Essence> = {
@@ -1221,6 +1374,7 @@ export const ITEMS: Record<string, Item> = {
     id: 'wooden_club',
     name: 'Barbarian Heavy Club',
     type: 'weapon',
+    weaponClass: 'hammer',
     weight: 6,
     basePrice: 40,
     attackBonus: 6,
@@ -1230,6 +1384,7 @@ export const ITEMS: Record<string, Item> = {
     id: 'one_hand_hammer',
     name: 'One-Handed War Hammer',
     type: 'weapon',
+    weaponClass: 'hammer',
     weight: 7,
     basePrice: 150,
     attackBonus: 12,
@@ -1239,6 +1394,7 @@ export const ITEMS: Record<string, Item> = {
     id: 'iron_greataxe',
     name: 'Iron Greataxe',
     type: 'weapon',
+    weaponClass: 'axe',
     weight: 10,
     basePrice: 200,
     attackBonus: 16,
@@ -1248,10 +1404,57 @@ export const ITEMS: Record<string, Item> = {
     id: 'acro_longsword',
     name: 'ดาบยาวอัคโร่ (Acro Longsword)',
     type: 'weapon',
+    weaponClass: 'sword',
     weight: 8,
     basePrice: 420,
     attackBonus: 26,
     description: 'ดาบยาวชั้นยอดระดับกลาง-สูง เหมาะสำหรับบุกชั้น 4–7',
+  },
+  idium_mace: {
+    id: 'idium_mace',
+    name: 'กระบองอิเดียมบริสุทธิ์ (ระดับ 3)',
+    type: 'weapon',
+    weaponClass: 'hammer',
+    weight: 8,
+    basePrice: 650,
+    riftStoneCost: 3,
+    attackBonus: 34,
+    piercesSpirit: true,
+    description: 'อาวุธระดับ 3 บริสุทธิ์ 100% ตีทะลุร่างวิญญาณเต็มแรง (ใช้ 650 G + 3 Rift Stone)',
+  },
+  wyvern_boots: {
+    id: 'wyvern_boots',
+    name: 'รองเท้าบูทหนังไวเวิร์น (ระดับ 2)',
+    type: 'number_item',
+    weight: 2,
+    basePrice: 520,
+    riftStoneCost: 2,
+    defenseBonus: 5,
+    flexBonus: 6,
+    description: 'อุปกรณ์ระดับ 2 เสริม Defense +5 และ Flexibility +6 (520 G + 2 Rift Stone)',
+  },
+  pain_stone_relic: {
+    id: 'pain_stone_relic',
+    name: '[ศิลาแห่งความเจ็บปวด]',
+    type: 'number_item',
+    weight: 1,
+    basePrice: 580,
+    riftStoneCost: 3,
+    defenseBonus: 7,
+    regenHpBonus: 3,
+    description: 'วัตถุโบราณหายาก เพิ่ม Defense +7 และฟื้นฟู +3 HP/เทิร์น (580 G + 3 Rift Stone)',
+  },
+  underworld_lantern: {
+    id: 'underworld_lantern',
+    name: '[ตะเกียงแห่งยมโลก]',
+    type: 'number_item',
+    weight: 1.5,
+    basePrice: 540,
+    riftStoneCost: 2,
+    visionBonus: 4,
+    flexBonus: 3,
+    piercesSpirit: true,
+    description: 'วัตถุโบราณส่องนำทางวิญญาณ (+4 Vision, +3 Flex, เจาะเกราะวิญญาณ · 540 G + 2 Rift Stone)',
   },
   cloth_loincloth: {
     id: 'cloth_loincloth',
@@ -1755,8 +1958,9 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     essenceId: 'curse_shaman',
     rangedRange: 4,
     inflictsCurse: true,
+    isSpirit: true,
     symbol: 'E',
-    description: 'สัตว์หายากระดับ 5 แห่งชั้น 5 กัดกินวิญญาณด้วยคำสาป',
+    description: 'สัตว์หายากระดับ 5 แห่งชั้น 5 กัดกินวิญญาณด้วยคำสาป (ต้านกายภาพ)',
   },
   drake: {
     id: 'drake',
@@ -1808,8 +2012,9 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     inflictsCurse: true,
     enragesAtHalf: true,
     isBoss: true,
+    isSpirit: true,
     symbol: 'F',
-    description: 'Floor Master ชั้น 5!',
+    description: 'Floor Master ชั้น 5! (ร่างวิญญาณต้านกายภาพ)',
   },
   lanemut_warrior: {
     id: 'lanemut_warrior',
@@ -1965,6 +2170,7 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     inflictsBleed: true,
     enragesAtHalf: true,
     isBoss: true,
+    isSpirit: true,
     symbol: 'X',
     description: 'ราชาวิญญาณมืดผู้ครองซากปรักหักพังแพนเทเลียน ชั้น 7 (ดรอปแก่นแท้ลอร์ดแห่งความโกลาหล)!',
   },
@@ -2035,8 +2241,9 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     essenceId: 'doom_fire_fairy',
     rangedRange: 4,
     inflictsBlind: true,
+    isSpirit: true,
     symbol: 'i',
-    description: 'มอนสเตอร์ไร้รูปร่างในป่าแม่มด ดรอปแก่นแท้ดูมไฟร์แฟรี่',
+    description: 'มอนสเตอร์ไร้รูปร่างในป่าแม่มด ดรอปแก่นแท้ดูมไฟร์แฟรี่ (ต้านกายภาพ)',
   },
   half_troll: {
     id: 'half_troll',

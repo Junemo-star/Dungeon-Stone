@@ -10,17 +10,24 @@ function nextMonUid(): string {
   return `m_${Date.now()}_${mapUidCounter}`;
 }
 
-export function spawnMonsterInstance(templateId: string, x: number, y: number): MonsterInstance {
+export function spawnMonsterInstance(
+  templateId: string,
+  x: number,
+  y: number,
+  ngPlusCount = 0
+): MonsterInstance {
   const t = MONSTERS[templateId];
+  const scale = 1 + ngPlusCount * 0.15;
+  const maxHp = Math.round(t.maxHp * scale);
   return {
     uid: nextMonUid(),
     templateId: t.id,
-    name: t.name,
+    name: ngPlusCount > 0 ? `${t.name} (NG+${ngPlusCount})` : t.name,
     rank: t.rank,
-    hp: t.maxHp,
-    maxHp: t.maxHp,
-    attack: t.attack,
-    defense: t.defense,
+    hp: maxHp,
+    maxHp,
+    attack: Math.round(t.attack * scale),
+    defense: Math.round(t.defense * scale),
     flexibility: t.flexibility,
     x,
     y,
@@ -100,7 +107,8 @@ export function getRiftTypeForFloor(floor: FloorId): RiftType | null {
 
 export function generateProceduralFloor(
   floor: FloorId,
-  riftType: RiftType | null
+  riftType: RiftType | null,
+  ngPlusCount = 0
 ): {
   grid: TileType[][];
   monsters: MonsterInstance[];
@@ -192,10 +200,10 @@ export function generateProceduralFloor(
     const [x2, y2] = takeTile();
     const [x3, y3] = takeTile();
     monsters.push(
-      spawnMonsterInstance('mimic', x1, y1),
-      spawnMonsterInstance('stone_golem', x2, y2),
-      spawnMonsterInstance('corpse_golem', x3, y3),
-      spawnMonsterInstance('vampire_guardian', bossX, bossY)
+      spawnMonsterInstance('mimic', x1, y1, ngPlusCount),
+      spawnMonsterInstance('stone_golem', x2, y2, ngPlusCount),
+      spawnMonsterInstance('corpse_golem', x3, y3, ngPlusCount),
+      spawnMonsterInstance('vampire_guardian', bossX, bossY, ngPlusCount)
     );
     return { grid, monsters, spawnX, spawnY, hasRiftPortal: false };
   }
@@ -206,11 +214,11 @@ export function generateProceduralFloor(
     const [x3, y3] = takeTile();
     const [x4, y4] = takeTile();
     monsters.push(
-      spawnMonsterInstance('frost_wolf', x1, y1),
-      spawnMonsterInstance('frost_wolf', x2, y2),
-      spawnMonsterInstance('yeti', x3, y3),
-      spawnMonsterInstance('yeti', x4, y4),
-      spawnMonsterInstance('lycanthrope_guardian', bossX, bossY)
+      spawnMonsterInstance('frost_wolf', x1, y1, ngPlusCount),
+      spawnMonsterInstance('frost_wolf', x2, y2, ngPlusCount),
+      spawnMonsterInstance('yeti', x3, y3, ngPlusCount),
+      spawnMonsterInstance('yeti', x4, y4, ngPlusCount),
+      spawnMonsterInstance('lycanthrope_guardian', bossX, bossY, ngPlusCount)
     );
     return { grid, monsters, spawnX, spawnY, hasRiftPortal: false };
   }
@@ -221,11 +229,27 @@ export function generateProceduralFloor(
     const [x3, y3] = takeTile();
     const [x4, y4] = takeTile();
     monsters.push(
-      spawnMonsterInstance('witch_lantern', x1, y1),
-      spawnMonsterInstance('witch_lantern', x2, y2),
-      spawnMonsterInstance('half_troll', x3, y3),
-      spawnMonsterInstance('half_troll', x4, y4),
-      spawnMonsterInstance('cannibalo', bossX, bossY)
+      spawnMonsterInstance('witch_lantern', x1, y1, ngPlusCount),
+      spawnMonsterInstance('witch_lantern', x2, y2, ngPlusCount),
+      spawnMonsterInstance('half_troll', x3, y3, ngPlusCount),
+      spawnMonsterInstance('half_troll', x4, y4, ngPlusCount),
+      spawnMonsterInstance('cannibalo', bossX, bossY, ngPlusCount)
+    );
+    return { grid, monsters, spawnX, spawnY, hasRiftPortal: false };
+  }
+
+  if (riftType === 'temple_100') {
+    const [x1, y1] = takeTile();
+    const [x2, y2] = takeTile();
+    const [x3, y3] = takeTile();
+    const [x4, y4] = takeTile();
+    const bossId = Math.random() < 0.5 ? 'ogre' : 'vampire_guardian';
+    monsters.push(
+      spawnMonsterInstance('mimic', x1, y1, ngPlusCount),
+      spawnMonsterInstance('death_knight', x2, y2, ngPlusCount),
+      spawnMonsterInstance('drake', x3, y3, ngPlusCount),
+      spawnMonsterInstance('lanemut_warrior', x4, y4, ngPlusCount),
+      spawnMonsterInstance(bossId, bossX, bossY, ngPlusCount)
     );
     return { grid, monsters, spawnX, spawnY, hasRiftPortal: false };
   }
@@ -264,9 +288,9 @@ export function generateProceduralFloor(
   const spec = rosters[floor];
   for (const mobId of spec.mobs) {
     const [mx, my] = takeTile();
-    monsters.push(spawnMonsterInstance(mobId, mx, my));
+    monsters.push(spawnMonsterInstance(mobId, mx, my, ngPlusCount));
   }
-  monsters.push(spawnMonsterInstance(spec.boss, bossX, bossY));
+  monsters.push(spawnMonsterInstance(spec.boss, bossX, bossY, ngPlusCount));
 
   return { grid, monsters, spawnX, spawnY, hasRiftPortal: shouldSpawnRift };
 }

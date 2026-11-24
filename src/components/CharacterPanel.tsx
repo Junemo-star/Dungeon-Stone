@@ -11,7 +11,7 @@ interface CharacterPanelProps {
 
 export function CharacterPanel({ state, onOpenModal }: CharacterPanelProps) {
   const { player } = state;
-  const stats = getEffectiveStats(player);
+  const stats = getEffectiveStats(player, state.awakenedPartyIds);
   const race = RACES[player.raceId];
   const weapon = ITEMS[player.equippedWeaponId];
   const armor = ITEMS[player.equippedArmorId];
@@ -34,10 +34,17 @@ export function CharacterPanel({ state, onOpenModal }: CharacterPanelProps) {
             {player.name}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 4 }}>
+            <span className="badge badge-lore">Rank {player.explorerRank}</span>
             <span className="badge">{player.race}</span>
             <span className="badge">
               Lv.{player.level} ({player.exp}/{player.expToNext})
             </span>
+            <span className="badge" style={{ background: '#3b2458', color: '#e9d5ff' }}>
+              Rift Stone: {player.riftStones}
+            </span>
+            {state.ngPlusCount > 0 && (
+              <span className="badge badge-warn">NG+{state.ngPlusCount}</span>
+            )}
           </div>
         </div>
       </div>
@@ -46,9 +53,11 @@ export function CharacterPanel({ state, onOpenModal }: CharacterPanelProps) {
         player.bleedTurns > 0 ||
         player.blindTurns > 0 ||
         player.torchTurns > 0 ||
+        player.guardTurns > 0 ||
         player.racialBuffTurns > 0 ||
         player.assimilationTurns > 0 ||
         player.keenFocusActive ||
+        state.loanDebt > 0 ||
         stats.noPotionHeal ||
         stats.extraThirstDrain > 0 ||
         stats.rangedVulnPct > 0 ||
@@ -56,6 +65,14 @@ export function CharacterPanel({ state, onOpenModal }: CharacterPanelProps) {
         stats.extraManaCost > 0 ||
         stats.isOverweight) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {state.loanDebt > 0 && (
+            <span className="badge badge-warn">
+              หนี้ธนาคาร: {state.loanDebt} G (ด.{state.loanDueDay})
+            </span>
+          )}
+          {player.guardTurns > 0 && (
+            <span className="badge badge-success">บล็อก ({player.guardTurns}T)</span>
+          )}
           {player.curses > 0 && (
             <span className={player.curses >= 12 ? 'badge badge-warn' : 'badge'}>
               คำสาป {player.curses}/15
@@ -221,8 +238,11 @@ export function CharacterPanel({ state, onOpenModal }: CharacterPanelProps) {
       )}
 
       <div className="stat-box" style={{ fontSize: '0.84rem', display: 'grid', gap: 2 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#efe5d5' }}>
-          <Shield size={14} color="#63b3ed" /> {weapon?.name}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, color: '#efe5d5' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Shield size={14} color="#63b3ed" /> {weapon?.name}
+          </span>
+          <span className="badge badge-lore">Mastery Lv.{stats.weaponMasteryLv}</span>
         </div>
         <div style={{ color: 'var(--muted)' }}>
           เกราะ: {armor?.name} ({player.armorDurability}%) · {stats.currentWeight}/{stats.maxCarryWeight} kg

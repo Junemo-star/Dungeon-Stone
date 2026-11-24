@@ -32,6 +32,7 @@ import {
   PlayerState,
   RaceId,
   TileType,
+  WeaponClass,
 } from '../types/game';
 import {
   generateProceduralFloor,
@@ -93,7 +94,11 @@ export function getActiveSynergies(essences: Essence[]): ActiveSynergy[] {
   return active;
 }
 
-export function getEffectiveStats(player: PlayerState) {
+export function getWeaponMasteryLevel(xp: number): number {
+  return Math.min(5, Math.floor((xp ?? 0) / 4));
+}
+
+export function getEffectiveStats(player: PlayerState, awakenedPartyIds: string[] = []) {
   let strength = player.baseStats.physique.strength;
   let flexibility = player.baseStats.physique.flexibility;
   let vision = player.baseStats.physique.vision;
@@ -186,7 +191,14 @@ export function getEffectiveStats(player: PlayerState) {
   const shield = player.equippedShieldId ? ITEMS[player.equippedShieldId] : null;
   const numItem = player.equippedNumberItemId ? ITEMS[player.equippedNumberItemId] : null;
 
-  const weaponAtk = (weapon?.attackBonus ?? 0) + (numItem?.attackBonus ?? 0);
+  const wClass: WeaponClass = weapon?.weaponClass ?? 'hammer';
+  const weaponMasteryLv = getWeaponMasteryLevel(player.weaponMastery?.[wClass] ?? 0);
+  const masteryAtkBonus = weaponMasteryLv * 2;
+  const livingAinar = player.party.some((p) => p.id === 'ainar' && p.hp > 0);
+  const ainarBonus = livingAinar ? (awakenedPartyIds.includes('ainar') ? 4 : 2) : 0;
+
+  const weaponAtk = (weapon?.attackBonus ?? 0) + (numItem?.attackBonus ?? 0) + masteryAtkBonus + ainarBonus;
+  const piercesSpirit = Boolean(weapon?.piercesSpirit || numItem?.piercesSpirit);
   const armorDef = player.armorDurability > 0 ? (armor?.defenseBonus ?? 0) : 0;
   const shieldDef = shield?.defenseBonus ?? 0;
   const numDef = numItem?.defenseBonus ?? 0;
@@ -204,10 +216,11 @@ export function getEffectiveStats(player: PlayerState) {
   const hpCursePenalty = Math.floor(player.curses / 5) * 10;
 
   const hasErwen = player.party.some((p) => p.id === 'erwen' && p.hp > 0);
+  const erwenBonus = hasErwen ? (awakenedPartyIds.includes('erwen') ? 3 : 2) : 0;
   const hasMercArcher = !hasErwen && player.party.some((p) => p.role === 'archer' && p.hp > 0);
   const effectiveVision = Math.max(
     2,
-    vision + (hasErwen ? 2 : hasMercArcher ? 1 : 0) + (player.torchTurns > 0 ? 3 : 0) - statCursePenalty
+    vision + (hasErwen ? erwenBonus : hasMercArcher ? 1 : 0) + (player.torchTurns > 0 ? 3 : 0) - statCursePenalty
   );
 
   return {
@@ -236,6 +249,8 @@ export function getEffectiveStats(player: PlayerState) {
     curseVulnBonus,
     extraManaCost,
     armorWearExtra,
+    weaponMasteryLv,
+    piercesSpirit,
     activeSynergies,
   };
 }
@@ -401,6 +416,11 @@ function buildPlayerForRace(raceId: RaceId, name: string): PlayerState {
     racialBuffTurns: 0,
     assimilationTurns: 0,
     keenFocusActive: false,
+    explorerRank: 9,
+    registeredEssenceIds: [],
+    riftStones: 0,
+    guardTurns: 0,
+    weaponMastery: { hammer: 0, axe: 0, sword: 0 },
   };
 }
 
@@ -440,6 +460,15 @@ export function createInitialGameState(): GameState {
     auctionListings: generateAuctionListings(1),
     freeRumorUsedToday: false,
     dailyNews: pickRandom(DAILY_LORE_NEWS),
+    loanDebt: 0,
+    loanDueDay: 0,
+    expeditionStats: null,
+    lastExpeditionSummary: null,
+    partyTactic: 'balanced',
+    partyTrust: {},
+    awakenedPartyIds: [],
+    noarkWarChoice: 'none',
+    ngPlusCount: 0,
     soundMuted: false,
     popups: [],
     lastSfx: null,
@@ -518,6 +547,15 @@ export function startGameWithSetup(
     auctionListings: generateAuctionListings(1),
     freeRumorUsedToday: false,
     dailyNews: pickRandom(DAILY_LORE_NEWS),
+    loanDebt: 0,
+    loanDueDay: 0,
+    expeditionStats: null,
+    lastExpeditionSummary: null,
+    partyTactic: 'balanced',
+    partyTrust: {},
+    awakenedPartyIds: [],
+    noarkWarChoice: 'none',
+    ngPlusCount: 0,
     soundMuted: false,
     popups: [],
     lastSfx: null,
@@ -539,16 +577,27 @@ export function getBuyPrice(state: GameState, itemId: string): number {
   if (state.cityId === 'noark') return item.basePrice; // Noark doesn't apply Barbarian penalty
   const race = RACES[state.player.raceId];
   const multiplier = state.gamerKnowledgeUsed ? 1.0 : race.merchantBuyMultiplier;
-  return Math.ceil(item.basePrice * multiplier);
+  const rankDiscount = state.player.explorerRank <= 5 ? 0.9 : 1.0;
+  return Math.ceil(item.basePrice * multiplier * rankDiscount);
 }
 
 export function getSellPrice(state: GameState, itemId: string): number {
   const item = ITEMS[itemId];
   if (!item) return 0;
-  if (state.cityId === 'noark') return item.basePrice;
+  const rankBonus =
+    itemId === 'magic_stone'
+      ? state.player.explorerRank <= 5
+        ? 1.15
+        : state.player.explorerRank === 6
+          ? 1.1
+          : state.player.explorerRank <= 8
+            ? 1.05
+            : 1.0
+      : 1.0;
+  if (state.cityId === 'noark') return Math.floor(item.basePrice * rankBonus);
   const race = RACES[state.player.raceId];
   const multiplier = state.gamerKnowledgeUsed ? 1.0 : race.merchantSellMultiplier;
-  return Math.floor(item.basePrice * multiplier);
+  return Math.floor(item.basePrice * multiplier * rankBonus);
 }
 
 export function enterLabyrinth(state: GameState, floor: FloorId = state.currentFloor): GameState {
@@ -579,7 +628,11 @@ export function enterLabyrinth(state: GameState, floor: FloorId = state.currentF
     };
   }
 
-  const { grid, monsters, spawnX, spawnY, hasRiftPortal } = generateProceduralFloor(floor, null);
+  const { grid, monsters, spawnX, spawnY, hasRiftPortal } = generateProceduralFloor(
+    floor,
+    null,
+    state.ngPlusCount
+  );
   const stats = getEffectiveStats(state.player);
   let logs = appendLog(
     state.logs,
@@ -615,6 +668,14 @@ export function enterLabyrinth(state: GameState, floor: FloorId = state.currentF
     turnsOnCurrentFloor: 0,
     cannibaloSpawned: false,
     labyrinthOpenDaysLeft: Math.max(0, state.labyrinthOpenDaysLeft - 1),
+    expeditionStats: {
+      deepestFloor: floor,
+      kills: 0,
+      turnsSpent: 0,
+      stonesGained: 0,
+      essencesObtained: [],
+    },
+    lastExpeditionSummary: null,
     grid,
     explored: emptyExploredGrid(),
     monsters,
@@ -661,7 +722,11 @@ export function descendNextFloor(state: GameState): GameState {
     };
   }
 
-  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(nextFloor, null);
+  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(
+    nextFloor,
+    null,
+    state.ngPlusCount
+  );
   const discoveredFloors = state.discoveredFloors.includes(nextFloor)
     ? state.discoveredFloors
     : [...state.discoveredFloors, nextFloor];
@@ -697,6 +762,12 @@ export function descendNextFloor(state: GameState): GameState {
     turnsOnCurrentFloor: 0,
     cannibaloSpawned: false,
     discoveredFloors,
+    expeditionStats: state.expeditionStats
+      ? {
+          ...state.expeditionStats,
+          deepestFloor: Math.max(state.expeditionStats.deepestFloor, nextFloor) as FloorId,
+        }
+      : null,
     grid,
     explored: emptyExploredGrid(),
     monsters,
@@ -723,14 +794,20 @@ export function enterRift(state: GameState): GameState {
   if (tile !== 'rift_portal') return state;
 
   const riftType = getRiftTypeForFloor(state.currentFloor) ?? 'vampire_rift';
-  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(state.currentFloor, riftType);
+  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(
+    state.currentFloor,
+    riftType,
+    state.ngPlusCount
+  );
 
   const riftLabel =
     riftType === 'glacial_cave'
       ? 'ถ้ำธารน้ำแข็ง (Glacial Cave)'
       : riftType === 'witch_forest'
         ? 'ป่าแม่มด (Witch Forest)'
-        : 'รอยแยกแวมไพร์ชั้นที่ 1';
+        : riftType === 'temple_100'
+          ? 'วิหารร้อยสี (Temple of 100 Colors)'
+          : 'รอยแยกแวมไพร์ชั้นที่ 1';
 
   const nextState: GameState = {
     ...state,
@@ -767,7 +844,11 @@ export function exitRiftToFloor(state: GameState): GameState {
   const tile = state.grid[state.player.y]?.[state.player.x];
   if (tile !== 'exit') return state;
 
-  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(state.currentFloor, null);
+  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(
+    state.currentFloor,
+    null,
+    state.ngPlusCount
+  );
   const nextState: GameState = {
     ...state,
     inRift: false,
@@ -798,6 +879,103 @@ export function exitRiftToFloor(state: GameState): GameState {
   return { ...nextState, explored: mergeExplored(nextState, visible) };
 }
 
+export function enterTemple100(state: GameState): GameState {
+  if (!state.discoveredFloors.includes(4) && state.player.explorerRank > 6) {
+    return {
+      ...state,
+      lastSfx: makeSfxToken('warning'),
+      logs: appendLog(
+        state.logs,
+        state.turn,
+        'ยังไม่พบเบาะแส "วิหารร้อยสี"! ต้องปลดล็อกชั้นที่ 4 หรือเลื่อนเป็น Rank ≤ 6 ก่อน',
+        'danger'
+      ),
+    };
+  }
+  if (state.labyrinthOpenDaysLeft <= 0) {
+    return {
+      ...state,
+      lastSfx: makeSfxToken('warning'),
+      logs: appendLog(state.logs, state.turn, 'เขาวงกตปิดชั่วคราว ต้องรอเปิดรอบใหม่ก่อนเข้าวิหารร้อยสี', 'danger'),
+    };
+  }
+
+  let nextGold = state.gold;
+  let nextRiftStones = state.player.riftStones;
+  if (nextRiftStones >= 2) {
+    nextRiftStones -= 2;
+  } else if (nextGold >= 120) {
+    nextGold -= 120;
+  } else {
+    return {
+      ...state,
+      lastSfx: makeSfxToken('warning'),
+      logs: appendLog(
+        state.logs,
+        state.turn,
+        'ต้องใช้ 2 Rift Stone หรือ 120 Gold เพื่อเปิดประตูสู่วิหารร้อยสี!',
+        'danger'
+      ),
+    };
+  }
+
+  const floorRef: FloorId = state.discoveredFloors.includes(5) ? 5 : 4;
+  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(
+    floorRef,
+    'temple_100',
+    state.ngPlusCount
+  );
+  const stats = getEffectiveStats(state.player, state.awakenedPartyIds);
+  const nextState: GameState = {
+    ...state,
+    gold: nextGold,
+    phase: 'labyrinth',
+    currentFloor: floorRef,
+    inRift: true,
+    activeRiftType: 'temple_100',
+    floorBossDefeated: false,
+    killsOnFloor: 0,
+    turnsOnCurrentFloor: 0,
+    cannibaloSpawned: false,
+    labyrinthOpenDaysLeft: Math.max(0, state.labyrinthOpenDaysLeft - 1),
+    expeditionStats: {
+      deepestFloor: floorRef,
+      kills: 0,
+      turnsSpent: 0,
+      stonesGained: 0,
+      essencesObtained: [],
+    },
+    lastExpeditionSummary: null,
+    grid,
+    explored: emptyExploredGrid(),
+    monsters,
+    droppedEssences: [],
+    droppedLoot: [],
+    popups: [],
+    lastSfx: makeSfxToken('portal'),
+    player: {
+      ...state.player,
+      riftStones: nextRiftStones,
+      maxMana: stats.manaPool,
+      mana: Math.min(state.player.mana, stats.manaPool),
+      x: spawnX,
+      y: spawnY,
+      guardTurns: 0,
+      assimilationTurns: 0,
+      racialBuffTurns: 0,
+      keenFocusActive: false,
+    },
+    logs: appendLog(
+      state.logs,
+      state.turn,
+      'ก้าวเข้าสู่ดันเจี้ยนลับ [วิหารร้อยสี]! (อัตราดรอปแก่นแท้หายากสูงมาก!)',
+      'lore'
+    ),
+  };
+  const visible = computeVisibleTiles(nextState);
+  return { ...nextState, explored: mergeExplored(nextState, visible) };
+}
+
 export function returnToCity(state: GameState): GameState {
   const cityLabel = state.cityId === 'noark' ? 'เมืองใต้ดินโนอาร์ค' : 'เมืองลาฟโดเนีย';
   const nextLogs = appendLog(
@@ -808,7 +986,19 @@ export function returnToCity(state: GameState): GameState {
   );
   let activeEvent = state.activeEvent;
 
-  if (!activeEvent && state.cityId === 'lafdonia' && state.player.suspicion >= 60) {
+  if (!activeEvent && state.noarkWarChoice === 'none' && (state.day >= 22 || state.discoveredFloors.includes(5))) {
+    activeEvent = {
+      id: 'noark_war',
+      title: 'สงครามโนอาร์คเปิดฉากแล้ว! (Ch.256)',
+      description:
+        'กองทัพหลวงและอัศวินแห่งแสงบุกเข้าโจมตีเมืองใต้ดินโนอาร์ค! คุณจะเลือกยืนฝั่งใดในประวัติศาสตร์ครั้งนี้?',
+      choices: [
+        { label: 'ช่วยเหลือราชวงศ์ลาฟโดเนีย (-15 ความสงสัย, +250 GP, +200 Gold)', effectKey: 'war_royalty' },
+        { label: 'ช่วยอมีเลียและเมืองใต้ดินโนอาร์ค (+250 Gold, +2 Rift Stone, ปลดล็อกโนอาร์ค)', effectKey: 'war_noark' },
+        { label: 'ยุยงสงครามกลางเมืองและปล้นสมบัติ (+450 Gold, +300 GP, +15 ความสงสัย)', effectKey: 'war_chaos' },
+      ],
+    };
+  } else if (!activeEvent && state.cityId === 'lafdonia' && state.player.suspicion >= 60) {
     activeEvent = {
       id: 'ghostbuster_check',
       title: 'นักล่าวิญญาณร้ายเข้าตรวจสอบ!',
@@ -831,16 +1021,36 @@ export function returnToCity(state: GameState): GameState {
     };
   }
 
+  const summary =
+    state.expeditionStats &&
+    (state.expeditionStats.turnsSpent > 0 ||
+      state.expeditionStats.kills > 0 ||
+      state.expeditionStats.stonesGained > 0 ||
+      state.expeditionStats.essencesObtained.length > 0)
+      ? state.expeditionStats
+      : null;
+
+  const nextTrust = { ...state.partyTrust };
+  for (const ally of state.player.party) {
+    if (ally.isMainCharacter && ally.hp > 0) {
+      nextTrust[ally.id] = Math.min(100, (nextTrust[ally.id] ?? 0) + 20);
+    }
+  }
+
   return {
     ...state,
     phase: 'city',
     inRift: false,
     activeRiftType: null,
+    expeditionStats: null,
+    lastExpeditionSummary: summary,
+    partyTrust: nextTrust,
     popups: [],
     lastSfx: makeSfxToken('portal'),
     activeEvent,
     player: {
       ...state.player,
+      guardTurns: 0,
       racialBuffTurns: 0,
       assimilationTurns: 0,
       keenFocusActive: false,
@@ -865,6 +1075,51 @@ export function resolveRandomEvent(state: GameState, effectKey: string): GameSta
       next.gold += 35;
       next.player = { ...next.player, gp: next.player.gp + 100 };
       next.logs = appendLog(next.logs, next.turn, 'นำข้อมูลเบาะแสไปขายต่ออย่างลับ ๆ (+35 Gold, +100 GP)', 'lore');
+      break;
+    case 'war_royalty':
+      next.noarkWarChoice = 'royalty';
+      next.gold += 200;
+      next.player = {
+        ...next.player,
+        gp: next.player.gp + 250,
+        suspicion: Math.max(0, next.player.suspicion - 15),
+      };
+      next.logs = appendLog(
+        next.logs,
+        next.turn,
+        'คุณสนับสนุนกองทัพหลวงในสงครามโนอาร์ค! (+200 Gold, +250 GP, -15 ความสงสัย)',
+        'lore'
+      );
+      break;
+    case 'war_noark':
+      next.noarkWarChoice = 'noark';
+      next.unlockedNoark = true;
+      next.gold += 250;
+      next.player = {
+        ...next.player,
+        riftStones: next.player.riftStones + 2,
+      };
+      next.logs = appendLog(
+        next.logs,
+        next.turn,
+        'คุณช่วยโนอาร์คอพยพเข้าเขาวงกตสำเร็จ! (+250 Gold, +2 Rift Stone)',
+        'lore'
+      );
+      break;
+    case 'war_chaos':
+      next.noarkWarChoice = 'chaos';
+      next.gold += 450;
+      next.player = {
+        ...next.player,
+        gp: next.player.gp + 300,
+        suspicion: Math.min(100, next.player.suspicion + 15),
+      };
+      next.logs = appendLog(
+        next.logs,
+        next.turn,
+        'คุณยุยงความวุ่นวายและกวาดทรัพย์สมบัติในสงครามโนอาร์ค (+450 Gold, +300 GP)!',
+        'lore'
+      );
       break;
     case 'gb_bribe': {
       const paid = Math.min(next.gold, 50);
@@ -1157,7 +1412,14 @@ function handleMonsterDefeated(
   nextLogs: LogEntry[],
   turn: number,
   stoneBonusPct: number
-): { player: PlayerState; logs: LogEntry[]; bossKilled: boolean; kills: number; leveledUp: boolean } {
+): {
+  player: PlayerState;
+  logs: LogEntry[];
+  bossKilled: boolean;
+  kills: number;
+  leveledUp: boolean;
+  victoryTriggered: boolean;
+} {
   const updatedPlayer = {
     ...player,
     defeatedMonsterIds: [...player.defeatedMonsterIds],
@@ -1166,20 +1428,35 @@ function handleMonsterDefeated(
   let logs = nextLogs;
   let bossKilled = false;
   let leveledUp = false;
+  let victoryTriggered = false;
   const floorDef = FLOORS[state.currentFloor];
 
   for (const dead of monstersKilled) {
     const template = MONSTERS[dead.templateId];
 
+    if (dead.templateId === 'dikol_king') {
+      victoryTriggered = true;
+    }
+
     if (dead.templateId === floorDef.gatekeeperBossId && !state.inRift) {
       bossKilled = true;
+      updatedPlayer.riftStones += 1;
       logs = appendLog(
         logs,
         turn,
-        `พิชิตบอสประจำชั้น ${dead.name} (+50 GP)!`,
+        `พิชิตบอสประจำชั้น ${dead.name} (+50 GP, +1 Rift Stone)!`,
         'success'
       );
       updatedPlayer.gp += 50;
+    } else if (template.isBoss && state.inRift) {
+      const bonusRift = state.activeRiftType === 'temple_100' ? 2 : 1;
+      updatedPlayer.riftStones += bonusRift;
+      logs = appendLog(
+        logs,
+        turn,
+        `พิชิตผู้พิทักษ์รอยแยก ${dead.name} (+${bonusRift} Rift Stone)!`,
+        'lore'
+      );
     }
 
     if (template.isClone) {
@@ -1208,14 +1485,23 @@ function handleMonsterDefeated(
     updatedPlayer.exp += expGain;
     updatedPlayer.gp += template.isBoss ? 80 : 10;
 
-    const dropChance = state.inRift
-      ? Math.min(0.95, template.essenceDropChance * 1.6)
-      : template.essenceDropChance;
+    const dropChance =
+      state.activeRiftType === 'temple_100'
+        ? 0.95
+        : state.inRift
+          ? Math.min(0.95, template.essenceDropChance * 1.6)
+          : template.essenceDropChance;
 
-    if (template.essenceId && Math.random() < dropChance) {
+    const templeRarePool = ['vol_herchan', 'twin_hydra', 'beorn', 'ifrit', 'gachapon', 'abyss_tongue'];
+    let droppedId = template.essenceId;
+    if (state.activeRiftType === 'temple_100' && (Math.random() < 0.7 || !droppedId)) {
+      droppedId = templeRarePool[Math.floor(Math.random() * templeRarePool.length)];
+    }
+
+    if (droppedId && Math.random() < dropChance) {
       nextEssences.push({
         uid: nextUid('ess'),
-        essenceId: template.essenceId,
+        essenceId: droppedId,
         x: dead.x,
         y: dead.y,
         turnsRemaining: 12,
@@ -1223,7 +1509,7 @@ function handleMonsterDefeated(
       logs = appendLog(
         logs,
         turn,
-        `${dead.name} สลายเป็นฝุ่น ดรอป ${ESSENCES[template.essenceId].name} (+${expGain} EXP)!`,
+        `${dead.name} สลายเป็นฝุ่น ดรอป ${ESSENCES[droppedId].name} (+${expGain} EXP)!`,
         'lore'
       );
     } else {
@@ -1270,7 +1556,244 @@ function handleMonsterDefeated(
     }
   }
 
-  return { player: updatedPlayer, logs, bossKilled, kills: monstersKilled.length, leveledUp };
+  return { player: updatedPlayer, logs, bossKilled, kills: monstersKilled.length, leveledUp, victoryTriggered };
+}
+
+function resolveVictoryEnding(state: GameState): { title: string; desc: string } {
+  if (state.noarkWarChoice === 'noark' || state.cityId === 'noark') {
+    return {
+      title: 'ราชันใต้ดินแห่งโนอาร์ค (Lord of the Abyss)',
+      desc: 'หลังปราบราชาวิญญาณมืด ดิโคล คุณร่วมมือกับอมีเลียสร้างระเบียบใหม่จากเมืองใต้ดินโนอาร์ค และครอบครองมรดกแห่งจอมเวทกาฟริลิอุสอย่างสมบูรณ์!',
+    };
+  }
+  if (state.player.explorerRank <= 5 && state.player.suspicion < 50) {
+    return {
+      title: 'วีรบุรุษขุนนางแห่งลาฟโดเนีย (Hero of Lafdonia)',
+      desc: 'คุณก้าวขึ้นเป็นบาร์บาเรียนคนแรกในรอบทศวรรษที่ได้รับบรรดาศักดิ์ขุนนางแห่งลาฟโดเนีย พิชิตชั้นที่ 7 และสร้างชื่อเสียงก้องทั่วพื้นผิว!',
+    };
+  }
+  return {
+    title: 'ผู้พิชิตยอดเขาวงกต (Master of the Labyrinth)',
+    desc: 'คุณเอาชนะภัยพิบัติในทวีปทมิฬและปลดล็อกปริศนาของ [ดันเจี้ยนแอนด์สโตน] พร้อมถือครองพลังย้อนเวลาแห่ง [เศษเสี้ยวแห่งบันทึก]!',
+  };
+}
+
+export function startNewGamePlus(state: GameState): GameState {
+  const nextNg = state.ngPlusCount + 1;
+  const raceDef = RACES[state.player.raceId];
+  const { grid, monsters, spawnX, spawnY } = generateProceduralFloor(1, null, nextNg);
+  const freshPlayer = buildPlayerForRace(state.player.raceId, state.player.name);
+  freshPlayer.x = spawnX;
+  freshPlayer.y = spawnY;
+  freshPlayer.maxEssenceSlots = 4;
+
+  return {
+    phase: 'city',
+    mode: state.mode,
+    cityId: 'lafdonia',
+    unlockedNoark: false,
+    day: 1,
+    turn: 0,
+    gold: 200,
+    livingCostPerDay: 25,
+    currentFloor: 1,
+    inRift: false,
+    activeRiftType: null,
+    floorBossDefeated: false,
+    killsOnFloor: 0,
+    turnsOnCurrentFloor: 0,
+    cannibaloSpawned: false,
+    discoveredFloors: [1],
+    labyrinthOpenDaysLeft: 7,
+    taxDue: 200,
+    taxDeadlineDay: 7,
+    gamerKnowledgeUsed: state.gamerKnowledgeUsed,
+    unlockedCorpseGolemLore: state.unlockedCorpseGolemLore,
+    claimedQuestIds: [],
+    purchasedCommunityIds: [],
+    essenceKnowledge: { ...state.essenceKnowledge },
+    purchasedEssenceBooks: [...state.purchasedEssenceBooks],
+    tavernMercenaries: generateRandomMercenaries(4, 1, 'lafdonia'),
+    auctionListings: generateAuctionListings(1),
+    freeRumorUsedToday: false,
+    dailyNews: pickRandom(DAILY_LORE_NEWS),
+    loanDebt: 0,
+    loanDueDay: 0,
+    expeditionStats: null,
+    lastExpeditionSummary: null,
+    partyTactic: 'balanced',
+    partyTrust: {},
+    awakenedPartyIds: [...state.awakenedPartyIds],
+    noarkWarChoice: 'none',
+    ngPlusCount: nextNg,
+    soundMuted: state.soundMuted,
+    popups: [],
+    lastSfx: makeSfxToken('portal'),
+    screenShake: 0,
+    activeEvent: null,
+    player: freshPlayer,
+    grid,
+    explored: emptyExploredGrid(),
+    monsters,
+    droppedEssences: [],
+    droppedLoot: [],
+    logs: [
+      {
+        id: nextUid('log'),
+        turn: 0,
+        tone: 'lore',
+        text: `เปิดใช้งาน [เศษเสี้ยวแห่งบันทึก] — ย้อนเวลากลับสู่วันที่ 1 ในรอบ NG+${nextNg} (${raceDef.thaiName}, 200 Gold, ช่องแก่นแท้ 4 ช่อง · มอนสเตอร์แกร่งขึ้น +${nextNg * 15}%)!`,
+      },
+    ],
+  };
+}
+
+export function activateMasterySkill(
+  state: GameState,
+  skill: 'leap' | 'swing' | 'block'
+): GameState {
+  if (state.phase !== 'labyrinth') return state;
+  const cost = skill === 'swing' ? 7 : skill === 'leap' ? 5 : 4;
+  if (state.player.mana < cost) {
+    return {
+      ...state,
+      lastSfx: makeSfxToken('warning'),
+      logs: appendLog(state.logs, state.turn, `Mana ไม่พอใช้ท่าอาวุธ (ต้องการ ${cost} MP)`, 'danger'),
+    };
+  }
+
+  let nextPlayer = { ...state.player, mana: state.player.mana - cost };
+  const stats = getEffectiveStats(nextPlayer, state.awakenedPartyIds);
+  let nextMonsters = [...state.monsters];
+  const nextLoot = [...state.droppedLoot];
+  const nextEssences = [...state.droppedEssences];
+  let nextLogs = state.logs;
+  const popups: FloatingPopup[] = [];
+  let kills = 0;
+  let bossKilled = false;
+  let leveledUp = false;
+  let victoryTriggered = false;
+
+  if (skill === 'block') {
+    nextPlayer.guardTurns = 2;
+    popups.push(makePopup(nextPlayer.x, nextPlayer.y, 'GUARD!', '#90cdf4'));
+    nextLogs = appendLog(nextLogs, state.turn, 'ตั้งท่า [บล็อก] (4 MP)! ลดความเสียหายที่ได้รับลงครึ่งหนึ่งนาน 2 เทิร์น', 'success');
+  } else if (skill === 'swing') {
+    const swingDmgBase = Math.round(stats.attack * 1.25);
+    let hits = 0;
+    const defeated: MonsterInstance[] = [];
+    const survivors: MonsterInstance[] = [];
+    for (const m of nextMonsters) {
+      const dist = Math.abs(m.x - nextPlayer.x) + Math.abs(m.y - nextPlayer.y);
+      if (dist <= 1) {
+        hits += 1;
+        const tmpl = MONSTERS[m.templateId];
+        const spiritMult = tmpl?.isSpirit && !stats.piercesSpirit ? 0.5 : 1.0;
+        const dmg = Math.max(3, Math.round((swingDmgBase - m.defense) * spiritMult));
+        popups.push(makePopup(m.x, m.y, `-${dmg}`, '#fbbf24'));
+        if (m.hp - dmg <= 0) {
+          defeated.push(m);
+        } else {
+          survivors.push({ ...m, hp: m.hp - dmg });
+        }
+      } else {
+        survivors.push(m);
+      }
+    }
+    nextMonsters = survivors;
+    nextLogs = appendLog(nextLogs, state.turn, `ใช้ [สวิง] ฟาดกวาดรอบตัวโดนมอนสเตอร์ ${hits} ตัว!`, 'combat');
+    if (defeated.length > 0) {
+      const res = handleMonsterDefeated(state, nextPlayer, defeated, nextLoot, nextEssences, nextLogs, state.turn, stats.stoneBonusPct);
+      nextPlayer = res.player;
+      nextLogs = res.logs;
+      kills = res.kills;
+      bossKilled = res.bossKilled;
+      leveledUp = res.leveledUp;
+      victoryTriggered = res.victoryTriggered;
+    }
+  } else {
+    let targetIdx = -1;
+    let bestDist = 99;
+    nextMonsters.forEach((m, idx) => {
+      const d = Math.abs(m.x - nextPlayer.x) + Math.abs(m.y - nextPlayer.y);
+      if (d > 1 && d <= 4 && d < bestDist) {
+        bestDist = d;
+        targetIdx = idx;
+      }
+    });
+    if (targetIdx === -1) {
+      return {
+        ...state,
+        logs: appendLog(state.logs, state.turn, 'ไม่มีศัตรูในระยะ 2–4 ช่องให้ใช้ [กระโดด] พุ่งเข้าใส่!', 'info'),
+      };
+    }
+    const target = nextMonsters[targetIdx];
+    const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    let landPos: [number, number] | null = null;
+    for (const [dx, dy] of dirs) {
+      const lx = target.x + dx;
+      const ly = target.y + dy;
+      const t = state.grid[ly]?.[lx];
+      const occ = nextMonsters.some((o) => o.x === lx && o.y === ly);
+      if (t && t !== 'wall' && t !== 'crystal' && !occ) {
+        landPos = [lx, ly];
+        break;
+      }
+    }
+    if (landPos) {
+      nextPlayer.x = landPos[0];
+      nextPlayer.y = landPos[1];
+    }
+    const tmpl = MONSTERS[target.templateId];
+    const spiritMult = tmpl?.isSpirit && !stats.piercesSpirit ? 0.5 : 1.0;
+    const leapDmg = Math.max(4, Math.round((stats.attack * 1.15 - target.defense) * spiritMult));
+    popups.push(makePopup(target.x, target.y, `-${leapDmg}`, '#fbbf24'));
+    if (target.hp - leapDmg <= 0) {
+      const [dead] = nextMonsters.splice(targetIdx, 1);
+      const res = handleMonsterDefeated(state, nextPlayer, [dead], nextLoot, nextEssences, nextLogs, state.turn, stats.stoneBonusPct);
+      nextPlayer = res.player;
+      nextLogs = res.logs;
+      kills = res.kills;
+      bossKilled = res.bossKilled;
+      leveledUp = res.leveledUp;
+      victoryTriggered = res.victoryTriggered;
+    } else {
+      nextMonsters[targetIdx] = { ...target, hp: target.hp - leapDmg };
+      nextLogs = appendLog(nextLogs, state.turn, `ใช้ [กระโดด] พุ่งเข้าฟาด ${target.name} (${leapDmg} dmg)!`, 'combat');
+    }
+  }
+
+  if (victoryTriggered) {
+    const end = resolveVictoryEnding(state);
+    return {
+      ...state,
+      phase: 'victory',
+      victoryEndingTitle: end.title,
+      victoryEndingDesc: end.desc,
+      player: nextPlayer,
+      monsters: nextMonsters,
+      logs: appendLog(nextLogs, state.turn, `พิชิต ${end.title}!`, 'lore'),
+    };
+  }
+
+  return advanceTurnEffects(
+    {
+      ...state,
+      floorBossDefeated: state.floorBossDefeated || bossKilled,
+      killsOnFloor: state.killsOnFloor + kills,
+      expeditionStats: state.expeditionStats
+        ? { ...state.expeditionStats, kills: state.expeditionStats.kills + kills }
+        : null,
+      player: nextPlayer,
+      monsters: nextMonsters,
+      droppedLoot: nextLoot,
+      droppedEssences: nextEssences,
+      logs: nextLogs,
+    },
+    popups,
+    leveledUp ? 'levelup' : 'hit',
+    0
+  );
 }
 
 export function activateEssenceSkill(state: GameState, essenceId: string): GameState {
@@ -1300,8 +1823,22 @@ export function activateEssenceSkill(state: GameState, essenceId: string): GameS
   };
   let nextMonsters = [...state.monsters];
   let nextLogs = state.logs;
-  const stats = getEffectiveStats(nextPlayer);
+  const stats = getEffectiveStats(nextPlayer, state.awakenedPartyIds);
   const popups: FloatingPopup[] = [];
+
+  if (
+    state.player.explorerRank <= 6 &&
+    !state.player.registeredEssenceIds.includes(essenceId) &&
+    Math.random() < 0.35
+  ) {
+    nextPlayer.suspicion = Math.min(100, nextPlayer.suspicion + 3);
+    nextLogs = appendLog(
+      nextLogs,
+      state.turn,
+      `คำเตือนแรงค์ ${state.player.explorerRank}: ใช้สกิลแก่นแท้ที่ยังไม่ลงทะเบียนกับกิลด์ (${ess.name}) — ความสงสัยเพิ่มขึ้นเป็น ${nextPlayer.suspicion}/100!`,
+      'danger'
+    );
+  }
 
   if (essenceId === 'gnome' || essenceId === 'doppelganger') {
     nextPlayer.assimilationTurns = essenceId === 'doppelganger' ? 2 : 3;
@@ -1524,7 +2061,7 @@ export function activateEssenceSkill(state: GameState, essenceId: string): GameS
   const nextLoot = [...state.droppedLoot];
   const nextEssences = [...state.droppedEssences];
 
-  const killResult = handleMonsterDefeated(
+    const killResult = handleMonsterDefeated(
     state,
     nextPlayer,
     defeated,
@@ -1535,11 +2072,30 @@ export function activateEssenceSkill(state: GameState, essenceId: string): GameS
     stats.stoneBonusPct
   );
 
+  if (killResult.victoryTriggered) {
+    const end = resolveVictoryEnding(state);
+    return {
+      ...state,
+      phase: 'victory',
+      victoryEndingTitle: end.title,
+      victoryEndingDesc: end.desc,
+      player: killResult.player,
+      monsters: survivors,
+      logs: appendLog(killResult.logs, state.turn, `พิชิต ${end.title}!`, 'lore'),
+    };
+  }
+
   return advanceTurnEffects(
     {
       ...state,
       floorBossDefeated: state.floorBossDefeated || killResult.bossKilled,
       killsOnFloor: state.killsOnFloor + killResult.kills,
+      expeditionStats: state.expeditionStats
+        ? {
+            ...state.expeditionStats,
+            kills: state.expeditionStats.kills + killResult.kills,
+          }
+        : null,
       player: killResult.player,
       monsters: survivors,
       droppedLoot: nextLoot,
@@ -1611,6 +2167,12 @@ export function absorbDroppedEssence(state: GameState, dropUid: string): GameSta
     popups: [makePopup(state.player.x, state.player.y, '+ESSENCE!', '#d8b4fe')],
     lastSfx: makeSfxToken('essence'),
     essenceKnowledge: upgradeEssenceKnowledge(state.essenceKnowledge, drop.essenceId, 'verified'),
+    expeditionStats: state.expeditionStats
+      ? {
+          ...state.expeditionStats,
+          essencesObtained: [...state.expeditionStats.essencesObtained, essence.name],
+        }
+      : null,
     player: updatedPlayer,
     droppedEssences: state.droppedEssences.filter((d) => d.uid !== dropUid),
     logs,
@@ -1645,6 +2207,16 @@ export function giveEssenceToPartyMember(
     popups: [makePopup(state.player.x, state.player.y, `${member.name} +5 ATK`, '#4ade80')],
     lastSfx: makeSfxToken('essence'),
     essenceKnowledge: upgradeEssenceKnowledge(state.essenceKnowledge, drop.essenceId, 'verified'),
+    partyTrust: {
+      ...state.partyTrust,
+      [memberId]: Math.min(100, (state.partyTrust[memberId] ?? 0) + 25),
+    },
+    expeditionStats: state.expeditionStats
+      ? {
+          ...state.expeditionStats,
+          essencesObtained: [...state.expeditionStats.essencesObtained, `${essence.name} (${member.name})`],
+        }
+      : null,
     player: { ...state.player, party: updatedParty },
     droppedEssences: state.droppedEssences.filter((d) => d.uid !== dropUid),
     logs: appendLog(
@@ -1675,6 +2247,12 @@ export function bottleDroppedEssence(state: GameState, dropUid: string): GameSta
     popups: [makePopup(state.player.x, state.player.y, 'BOTTLED!', '#38bdf8')],
     lastSfx: makeSfxToken('loot'),
     essenceKnowledge: upgradeEssenceKnowledge(state.essenceKnowledge, drop.essenceId, 'verified'),
+    expeditionStats: state.expeditionStats
+      ? {
+          ...state.expeditionStats,
+          essencesObtained: [...state.expeditionStats.essencesObtained, `${essence.name} (หลอด)`],
+        }
+      : null,
     player: {
       ...state.player,
       inventory: removeItemFromInventory(state.player.inventory, 'essence_vial', 1),
@@ -1709,6 +2287,7 @@ export function stepPlayer(state: GameState, dx: number, dy: number): GameState 
   let nextLogs = state.logs;
   let bossKilled = false;
   let kills = 0;
+  let collectedStones = 0;
   let leveledUp = false;
   const popups: FloatingPopup[] = [];
   let sfx: SfxType = 'step';
@@ -1719,7 +2298,7 @@ export function stepPlayer(state: GameState, dx: number, dy: number): GameState 
     nextLogs = appendLog(nextLogs, state.turn, 'การเคลื่อนที่ทำให้การพรางตัวถูกยกเลิก', 'info');
   }
 
-  const stats = getEffectiveStats(nextPlayer);
+  const stats = getEffectiveStats(nextPlayer, state.awakenedPartyIds);
   const targetMonsterIdx = nextMonsters.findIndex((m) => m.x === targetX && m.y === targetY);
   if (targetMonsterIdx !== -1) {
     const monster = nextMonsters[targetMonsterIdx];
@@ -1732,7 +2311,12 @@ export function stepPlayer(state: GameState, dx: number, dy: number): GameState 
       const critChance = Math.min(0.5, stats.flexibility * 0.025 + stats.critBonusPct / 100);
       const isCrit = Math.random() < critChance;
       const critMult = isCrit ? 1.5 : 1.0;
-      const rawDamage = Math.max(3, Math.round(stats.attack * focusMult * critMult - monster.defense));
+      const tmpl = MONSTERS[monster.templateId];
+      const spiritMult = tmpl?.isSpirit && !stats.piercesSpirit ? 0.45 : 1.0;
+      const rawDamage = Math.max(
+        3,
+        Math.round((stats.attack * focusMult * critMult - monster.defense) * spiritMult)
+      );
 
       const updatedHp = monster.hp - rawDamage;
       nextPlayer.keenFocusActive = false;
@@ -1771,10 +2355,27 @@ export function stepPlayer(state: GameState, dx: number, dy: number): GameState 
           stats.stoneBonusPct
         );
         nextPlayer = killRes.player;
+        const wClass = ITEMS[nextPlayer.equippedWeaponId]?.weaponClass ?? 'hammer';
+        nextPlayer.weaponMastery = {
+          ...nextPlayer.weaponMastery,
+          [wClass]: (nextPlayer.weaponMastery?.[wClass] ?? 0) + 1,
+        };
         nextLogs = killRes.logs;
         bossKilled = killRes.bossKilled;
         kills = killRes.kills;
         leveledUp = killRes.leveledUp;
+        if (killRes.victoryTriggered) {
+          const end = resolveVictoryEnding(state);
+          return {
+            ...state,
+            phase: 'victory',
+            victoryEndingTitle: end.title,
+            victoryEndingDesc: end.desc,
+            player: nextPlayer,
+            monsters: nextMonsters,
+            logs: appendLog(nextLogs, state.turn, `พิชิต ${end.title}!`, 'lore'),
+          };
+        }
       } else {
         const tmpl = MONSTERS[monster.templateId];
         const shouldEnrage = Boolean(tmpl?.enragesAtHalf && !monster.enraged && updatedHp <= monster.maxHp * 0.5);
@@ -1806,6 +2407,7 @@ export function stepPlayer(state: GameState, dx: number, dy: number): GameState 
     const lootAtTile = nextLoot.filter((l) => l.x === targetX && l.y === targetY);
     if (lootAtTile.length > 0) {
       const totalStones = lootAtTile.reduce((s, l) => s + l.magicStones, 0);
+      collectedStones += totalStones;
       nextPlayer.inventory = addItemToInventory(nextPlayer.inventory, 'magic_stone', totalStones);
       nextLoot = nextLoot.filter((l) => !(l.x === targetX && l.y === targetY));
       sfx = 'loot';
@@ -1819,6 +2421,13 @@ export function stepPlayer(state: GameState, dx: number, dy: number): GameState 
       ...state,
       floorBossDefeated: state.floorBossDefeated || bossKilled,
       killsOnFloor: state.killsOnFloor + kills,
+      expeditionStats: state.expeditionStats
+        ? {
+            ...state.expeditionStats,
+            kills: state.expeditionStats.kills + kills,
+            stonesGained: state.expeditionStats.stonesGained + collectedStones,
+          }
+        : null,
       player: nextPlayer,
       monsters: nextMonsters,
       droppedLoot: nextLoot,
@@ -1847,15 +2456,17 @@ function advanceTurnEffects(
   const nextEssences = [...state.droppedEssences];
   let bossKilled = state.floorBossDefeated;
   let kills = state.killsOnFloor;
+  let partyKills = 0;
   const popups = [...initialPopups];
   let sfx: SfxType = initialSfx;
   let shake = initialShake;
-  const stats = getEffectiveStats(nextPlayer);
+  const stats = getEffectiveStats(nextPlayer, state.awakenedPartyIds);
 
   if (nextPlayer.racialBuffTurns > 0) nextPlayer.racialBuffTurns -= 1;
   if (nextPlayer.assimilationTurns > 0) nextPlayer.assimilationTurns -= 1;
   if (nextPlayer.torchTurns > 0) nextPlayer.torchTurns -= 1;
   if (nextPlayer.blindTurns > 0) nextPlayer.blindTurns -= 1;
+  if (nextPlayer.guardTurns > 0) nextPlayer.guardTurns -= 1;
 
   nextPlayer.mana = Math.min(stats.manaPool, nextPlayer.mana + 1);
 
@@ -1884,6 +2495,9 @@ function advanceTurnEffects(
   }
 
   // Party offensive assist
+  const allyDmgMult =
+    state.partyTactic === 'aggressive' ? 1.25 : state.partyTactic === 'defensive' ? 0.85 : 1.0;
+
   if (nextPlayer.party.length > 0 && nextMonsters.length > 0) {
     for (const member of nextPlayer.party) {
       if (member.hp <= 0 || member.role === 'tank') continue;
@@ -1893,10 +2507,15 @@ function advanceTurnEffects(
       );
       if (targetIdx !== -1) {
         const m = nextMonsters[targetIdx];
-        const dmg =
+        const mishaDouble =
+          member.id === 'misha' && state.awakenedPartyIds.includes('misha') && Math.random() < 0.4
+            ? 2
+            : 1;
+        const baseAllyDmg =
           member.role === 'mage'
             ? member.attack
             : Math.max(2, member.attack - Math.floor(m.defense * 0.5));
+        const dmg = Math.round(baseAllyDmg * allyDmgMult * mishaDouble);
         const newHp = m.hp - dmg;
         popups.push(makePopup(m.x, m.y, `-${dmg}`, '#60a5fa'));
         if (newHp <= 0) {
@@ -1904,7 +2523,7 @@ function advanceTurnEffects(
           nextLogs = appendLog(
             nextLogs,
             nextTurn,
-            `${member.name} ปิดฉาก ${dead.name} (${dmg} dmg)!`,
+            `${member.name}${mishaDouble > 1 ? ' [ฟันสองครั้ง]' : ''} ปิดฉาก ${dead.name} (${dmg} dmg)!`,
             'combat'
           );
           const killRes = handleMonsterDefeated(
@@ -1921,12 +2540,25 @@ function advanceTurnEffects(
           nextLogs = killRes.logs;
           if (killRes.bossKilled) bossKilled = true;
           kills += killRes.kills;
+          partyKills += killRes.kills;
+          if (killRes.victoryTriggered) {
+            const end = resolveVictoryEnding(state);
+            return {
+              ...state,
+              phase: 'victory',
+              victoryEndingTitle: end.title,
+              victoryEndingDesc: end.desc,
+              player: nextPlayer,
+              monsters: nextMonsters,
+              logs: appendLog(nextLogs, nextTurn, `พิชิต ${end.title}!`, 'lore'),
+            };
+          }
         } else {
           nextMonsters[targetIdx] = { ...m, hp: newHp };
           nextLogs = appendLog(
             nextLogs,
             nextTurn,
-            `${member.name} โจมตีสนับสนุน ${m.name} (${dmg} dmg)`,
+            `${member.name}${mishaDouble > 1 ? ' [ฟันสองครั้ง]' : ''} โจมตีสนับสนุน ${m.name} (${dmg} dmg)`,
             'combat'
           );
         }
@@ -2021,7 +2653,11 @@ function advanceTurnEffects(
 
           const activeTank = nextPlayer.party.find((p) => p.role === 'tank' && p.hp > 0);
           if (activeTank) {
-            const absorbed = Math.ceil(dmg * 0.35);
+            const basePct =
+              state.partyTactic === 'defensive' ? 0.5 : state.partyTactic === 'aggressive' ? 0.2 : 0.35;
+            const muradBonus =
+              activeTank.id === 'murad' && state.awakenedPartyIds.includes('murad') ? 0.1 : 0;
+            const absorbed = Math.ceil(dmg * (basePct + muradBonus));
             dmg = Math.max(1, dmg - absorbed);
             activeTank.hp = Math.max(0, activeTank.hp - absorbed);
             nextLogs = appendLog(
@@ -2030,6 +2666,13 @@ function advanceTurnEffects(
               `${activeTank.name} ยกโล่รับแทน ${absorbed} dmg (เหลือ ${activeTank.hp}/${activeTank.maxHp})`,
               'info'
             );
+          }
+
+          if (nextPlayer.party.some((p) => p.id === 'raven' && p.hp > 0)) {
+            dmg = Math.max(1, Math.round(dmg * 0.85));
+          }
+          if (nextPlayer.guardTurns > 0) {
+            dmg = Math.max(1, Math.round(dmg * 0.5));
           }
 
           nextPlayer.hp -= dmg;
@@ -2235,6 +2878,13 @@ function advanceTurnEffects(
     cannibaloSpawned: nextCannibaloSpawned,
     floorBossDefeated: bossKilled,
     killsOnFloor: kills,
+    expeditionStats: state.expeditionStats
+      ? {
+          ...state.expeditionStats,
+          turnsSpent: state.expeditionStats.turnsSpent + 1,
+          kills: state.expeditionStats.kills + partyKills,
+        }
+      : null,
     popups: popups.slice(0, 6),
     lastSfx: makeSfxToken(sfx),
     screenShake: shake,

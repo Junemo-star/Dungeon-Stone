@@ -3,13 +3,15 @@ import {
   ESSENCES,
   generateAuctionListings,
   generateRandomMercenaries,
+  getMaxLoanAmount,
+  getNextRankPromotion,
   isMainCharacterUnlocked,
   ITEMS,
   PARTY_ROSTER,
 } from '../data/loreData';
 import { DAILY_LORE_NEWS, pickRandom, TAVERN_GOSSIP_LINES } from '../data/loreFlavor';
 import { COMMUNITY_OFFERS, STORY_QUESTS } from '../data/storyData';
-import { CityId, EssenceBookTier, EssenceKnowledgeLevel, GameState } from '../types/game';
+import { CityId, EssenceBookTier, EssenceKnowledgeLevel, GameState, PartyTactic } from '../types/game';
 import {
   addItemToInventory,
   appendLog,
@@ -39,6 +41,7 @@ export function buyItemInCity(state: GameState, itemId: string, quantity = 1): G
   if (!item || quantity <= 0) return state;
   const unitPrice = getBuyPrice(state, itemId);
   const totalCost = unitPrice * quantity;
+  const riftCost = (item.riftStoneCost ?? 0) * quantity;
   if (state.gold < totalCost) {
     return {
       ...state,
@@ -46,6 +49,17 @@ export function buyItemInCity(state: GameState, itemId: string, quantity = 1): G
         state.logs,
         state.turn,
         `เงินไม่พอซื้อ ${item.name} x${quantity} (ต้องการ ${totalCost} Gold)`,
+        'danger'
+      ),
+    };
+  }
+  if (state.player.riftStones < riftCost) {
+    return {
+      ...state,
+      logs: appendLog(
+        state.logs,
+        state.turn,
+        `Rift Stone ไม่พอซื้อ ${item.name} x${quantity} (ต้องการ ${riftCost} Rift Stone)`,
         'danger'
       ),
     };
@@ -63,6 +77,7 @@ export function buyItemInCity(state: GameState, itemId: string, quantity = 1): G
 
   const nextPlayer = {
     ...state.player,
+    riftStones: state.player.riftStones - riftCost,
     inventory: addItemToInventory(state.player.inventory, itemId, quantity),
   };
 
@@ -290,19 +305,25 @@ export function auctionSellEssenceVial(state: GameState, vialUid: string): GameS
   };
 }
 
+export function getAuctionBuyPrice(basePrice: number, explorerRank: number): number {
+  return explorerRank <= 7 ? Math.round((basePrice * 0.95) / 5) * 5 : basePrice;
+}
+
 export function buyAuctionEssence(state: GameState, listingId: string): GameState {
   const listing = state.auctionListings.find((l) => l.id === listingId && !l.sold);
   if (!listing) return state;
   const ess = ESSENCES[listing.essenceId];
   if (!ess) return state;
 
-  if (state.gold < listing.price) {
+  const finalPrice = getAuctionBuyPrice(listing.price, state.player.explorerRank);
+
+  if (state.gold < finalPrice) {
     return {
       ...state,
       logs: appendLog(
         state.logs,
         state.turn,
-        `เงินไม่พอประมูล ${ess.name} (ราคา ${listing.price} Gold)`,
+        `เงินไม่พอประมูล ${ess.name} (ราคา ${finalPrice} Gold)`,
         'danger'
       ),
     };
@@ -310,7 +331,7 @@ export function buyAuctionEssence(state: GameState, listingId: string): GameStat
 
   return {
     ...state,
-    gold: state.gold - listing.price,
+    gold: state.gold - finalPrice,
     essenceKnowledge: upgradeEssenceKnowledge(state.essenceKnowledge, ess.id, 'guild'),
     auctionListings: state.auctionListings.map((l) =>
       l.id === listingId ? { ...l, sold: true } : l
@@ -325,7 +346,7 @@ export function buyAuctionEssence(state: GameState, listingId: string): GameStat
     logs: appendLog(
       state.logs,
       state.turn,
-      `ชนะประมูล ${ess.name} ราคา ${listing.price} Gold! (เก็บลงหลอดทดลองในกระเป๋าแล้ว)`,
+      `ชนะประมูล ${ess.name} ราคา ${finalPrice} Gold! (เก็บลงหลอดทดลองในกระเป๋าแล้ว)`,
       'lore'
     ),
   };
@@ -735,26 +756,263 @@ export function repairArmorInCity(state: GameState): GameState {
   };
 }
 
+function resolveOverdueLoan(
+  state: GameState,
+  nextDay: number,
+  logs: GameState['logs']
+): {
+  loanDebt: number;
+  loanDueDay: number;
+  suspicion: number;
+  logs: GameState['logs'];
+} {
+  if (state.loanDebt > 0 && nextDay > state.loanDueDay) {
+    const newDebt = Math.ceil(state.loanDebt * 1.15);
+    const newSuspicion = Math.min(100, state.player.suspicion + 20);
+    const nextDue = nextDay + 14;
+    return {
+      loanDebt: newDebt,
+      loanDueDay: nextDue,
+      suspicion: newSuspicion,
+      logs: appendLog(
+        logs,
+        state.turn,
+        `แจ้งเตือนหนี้ธนาคารค้างชำระเกินกำหนด! ดอกเบี้ยปรับเพิ่มเป็น ${newDebt} Gold (กำหนดใหม่วันที่ ${nextDue}, ความสงสัย +20)`,
+        'danger'
+      ),
+    };
+  }
+  return {
+    loanDebt: state.loanDebt,
+    loanDueDay: state.loanDueDay,
+    suspicion: state.player.suspicion,
+    logs,
+  };
+}
+
+export function promoteExplorerRank(state: GameState): GameState {
+  const promo = getNextRankPromotion(state);
+  if (!promo) return state;
+  if (!promo.eligible) {
+    return {
+      ...state,
+      logs: appendLog(
+        state.logs,
+        state.turn,
+        `ยังไม่ผ่านเงื่อนไขเลื่อนสู่ Rank ${promo.toRank} (${promo.requirementText})`,
+        'danger'
+      ),
+    };
+  }
+  if (state.gold < promo.fee) {
+    return {
+      ...state,
+      logs: appendLog(
+        state.logs,
+        state.turn,
+        `เงินไม่พอจ่ายค่าธรรมเนียมสอบเลื่อนขั้น Rank ${promo.toRank} (ต้องการ ${promo.fee} Gold)`,
+        'danger'
+      ),
+    };
+  }
+
+  const nextRegistered =
+    promo.toRank <= 6
+      ? Array.from(
+          new Set([
+            ...state.player.registeredEssenceIds,
+            ...state.player.essences.map((e) => e.id),
+          ])
+        )
+      : state.player.registeredEssenceIds;
+
+  return {
+    ...state,
+    gold: state.gold - promo.fee,
+    player: {
+      ...state.player,
+      explorerRank: promo.toRank,
+      gp: state.player.gp + 150,
+      registeredEssenceIds: nextRegistered,
+    },
+    logs: appendLog(
+      state.logs,
+      state.turn,
+      `เลื่อนขั้นเป็นนักสำรวจ Rank ${promo.toRank} สำเร็จ! (+150 GP · ${promo.perkText})${
+        promo.toRank === 6 ? ' — กิลด์ได้ลงทะเบียนแก่นแท้ปัจจุบันของคุณไว้ในระบบแล้ว!' : ''
+      }`,
+      'lore'
+    ),
+  };
+}
+
+export function registerEssenceAtGuild(state: GameState, essenceId: string): GameState {
+  if (state.player.registeredEssenceIds.includes(essenceId)) return state;
+  const ess = state.player.essences.find((e) => e.id === essenceId);
+  if (!ess) return state;
+  const cost = 25;
+  if (state.gold < cost) {
+    return {
+      ...state,
+      logs: appendLog(state.logs, state.turn, `เงินไม่พอลงทะเบียนแก่นแท้ (${cost} Gold)`, 'danger'),
+    };
+  }
+  return {
+    ...state,
+    gold: state.gold - cost,
+    player: {
+      ...state.player,
+      registeredEssenceIds: [...state.player.registeredEssenceIds, essenceId],
+    },
+    logs: appendLog(
+      state.logs,
+      state.turn,
+      `ลงทะเบียน ${ess.name} กับกิลด์เรียบร้อย (-${cost} Gold) — ใช้สกิลในเขาวงกตได้โดยไม่เพิ่มความสงสัย`,
+      'lore'
+    ),
+  };
+}
+
+export function takeBankLoan(state: GameState, amount: number): GameState {
+  if (state.loanDebt > 0) {
+    return {
+      ...state,
+      logs: appendLog(state.logs, state.turn, 'คุณยังมีหนี้สินค้างชำระอยู่ ต้องคืนให้หมดก่อนจึงจะกู้ใหม่ได้', 'danger'),
+    };
+  }
+  const maxLoan = getMaxLoanAmount(state.player.explorerRank);
+  const cleanAmount = Math.min(maxLoan, Math.max(0, Math.round(amount)));
+  if (cleanAmount <= 0) return state;
+
+  const isZeroInterest = state.player.raceId === 'elf';
+  const totalOwed = isZeroInterest ? cleanAmount : Math.round(cleanAmount * 1.2);
+  const dueDay = state.day + 28;
+
+  return {
+    ...state,
+    gold: state.gold + cleanAmount,
+    loanDebt: totalOwed,
+    loanDueDay: dueDay,
+    logs: appendLog(
+      state.logs,
+      state.turn,
+      isZeroInterest
+        ? `รับสินเชื่อกโนมทรีสำหรับเผ่า Elf/Fairy +${cleanAmount} Gold (ดอกเบี้ย 0%! ครบกำหนดวันที่ ${dueDay})`
+        : `กู้เงินจากธนาคารลาฟโดเนีย +${cleanAmount} Gold (รวมดอกเบี้ย 20% = ${totalOwed} Gold ครบกำหนดวันที่ ${dueDay})`,
+      'lore'
+    ),
+  };
+}
+
+export function repayBankLoan(state: GameState): GameState {
+  if (state.loanDebt <= 0 || state.gold <= 0) return state;
+  const pay = Math.min(state.gold, state.loanDebt);
+  const remaining = state.loanDebt - pay;
+  return {
+    ...state,
+    gold: state.gold - pay,
+    loanDebt: remaining,
+    loanDueDay: remaining === 0 ? 0 : state.loanDueDay,
+    logs: appendLog(
+      state.logs,
+      state.turn,
+      remaining === 0
+        ? `ชำระหนี้ธนาคารครบถ้วน (-${pay} Gold)! ปลดภาระหนี้ทั้งหมดแล้ว`
+        : `ชำระหนี้บางส่วน -${pay} Gold (คงเหลือค้าง ${remaining} Gold)`,
+      'success'
+    ),
+  };
+}
+
+export function dismissExpeditionSummary(state: GameState): GameState {
+  return {
+    ...state,
+    lastExpeditionSummary: null,
+  };
+}
+
+export function setPartyTactic(state: GameState, tactic: PartyTactic): GameState {
+  const label =
+    tactic === 'aggressive'
+      ? 'บุกเต็มกำลัง (ATK เพื่อน x1.25)'
+      : tactic === 'defensive'
+        ? 'คุ้มกันแนวหลัง (แทงก์รับแทน 50%)'
+        : 'สมดุล (ค่ามาตรฐาน)';
+  return {
+    ...state,
+    partyTactic: tactic,
+    logs: appendLog(state.logs, state.turn, `เปลี่ยนแผนแทคติกปาร์ตี้เป็น: ${label}`, 'info'),
+  };
+}
+
+export function awakenPartyMember(state: GameState, memberId: string): GameState {
+  if (state.awakenedPartyIds.includes(memberId)) return state;
+  const trust = state.partyTrust[memberId] ?? 0;
+  if (trust < 60) {
+    return {
+      ...state,
+      logs: appendLog(state.logs, state.turn, 'ค่าความเชื่อใจยังไม่ถึง 60 — ร่วมลุยเขาวงกตหรือแบ่งแก่นแท้ให้เพื่อนเพื่อเพิ่ม Trust!', 'danger'),
+    };
+  }
+  const member = state.player.party.find((p) => p.id === memberId) ?? PARTY_ROSTER[memberId];
+  if (!member) return state;
+
+  const updatedParty = state.player.party.map((p) =>
+    p.id === memberId
+      ? {
+          ...p,
+          maxHp: p.maxHp + 25,
+          hp: p.hp + 25,
+          attack: p.attack + 5,
+          defense: p.defense + 2,
+        }
+      : p
+  );
+
+  return {
+    ...state,
+    awakenedPartyIds: [...state.awakenedPartyIds, memberId],
+    player: {
+      ...state.player,
+      party: updatedParty,
+    },
+    logs: appendLog(
+      state.logs,
+      state.turn,
+      `ปลุกพลังความเชื่อใจของ ${member.name} สำเร็จ! (HP +25, ATK +5, DEF +2 และเสริมบัฟพิเศษให้ทีม!)`,
+      'lore'
+    ),
+  };
+}
+
 export function advanceClosedCycle(state: GameState): GameState {
   if (state.labyrinthOpenDaysLeft > 0) return state;
   const nextDay = state.day + 21;
   const newTax = state.taxDue > 0 ? state.taxDue + 250 : 250;
+  const baseLogs = appendLog(
+    state.logs,
+    state.turn,
+    `เวลาผ่านไป 3 สัปดาห์ (วันที่ ${nextDay}) — เขาวงกตเปิดทำการอีกครั้ง (7 วัน) และภาษีรอบใหม่คือ ${newTax} Gold`,
+    'lore'
+  );
+  const loanRes = resolveOverdueLoan(state, nextDay, baseLogs);
   return {
     ...state,
     day: nextDay,
     labyrinthOpenDaysLeft: 7,
     taxDue: newTax,
     taxDeadlineDay: nextDay + 6,
+    loanDebt: loanRes.loanDebt,
+    loanDueDay: loanRes.loanDueDay,
     freeRumorUsedToday: false,
     tavernMercenaries: generateRandomMercenaries(4, nextDay, state.cityId),
     auctionListings: generateAuctionListings(nextDay),
     dailyNews: pickRandom(DAILY_LORE_NEWS),
-    logs: appendLog(
-      state.logs,
-      state.turn,
-      `เวลาผ่านไป 3 สัปดาห์ (วันที่ ${nextDay}) — เขาวงกตเปิดทำการอีกครั้ง (7 วัน) และภาษีรอบใหม่คือ ${newTax} Gold`,
-      'lore'
-    ),
+    player: {
+      ...state.player,
+      suspicion: loanRes.suspicion,
+    },
+    logs: loanRes.logs,
   };
 }
 
@@ -783,12 +1041,21 @@ export function restAtInn(state: GameState): GameState {
 
   const stats = getEffectiveStats(state.player);
   const nextOpenDays = Math.max(0, state.labyrinthOpenDaysLeft - 1);
+  const baseLogs = appendLog(
+    state.logs,
+    state.turn,
+    `พักผ่อนที่โรงแรม (วันที่ ${nextDay}) — ฟื้นฟูตัวละครและปาร์ตี้เต็ม! (เขาวงกตเปิดอีก ${nextOpenDays} วัน)`,
+    'success'
+  );
+  const loanRes = resolveOverdueLoan(state, nextDay, baseLogs);
 
   return {
     ...state,
     day: nextDay,
     gold: state.gold - state.livingCostPerDay,
     labyrinthOpenDaysLeft: nextOpenDays,
+    loanDebt: loanRes.loanDebt,
+    loanDueDay: loanRes.loanDueDay,
     freeRumorUsedToday: false,
     tavernMercenaries: generateRandomMercenaries(4, nextDay, state.cityId),
     auctionListings: generateAuctionListings(nextDay),
@@ -800,13 +1067,9 @@ export function restAtInn(state: GameState): GameState {
       thirst: state.player.maxThirst,
       bleedTurns: 0,
       blindTurns: 0,
+      suspicion: loanRes.suspicion,
       party: state.player.party.map((p) => ({ ...p, hp: p.maxHp })),
     },
-    logs: appendLog(
-      state.logs,
-      state.turn,
-      `พักผ่อนที่โรงแรม (วันที่ ${nextDay}) — ฟื้นฟูตัวละครและปาร์ตี้เต็ม! (เขาวงกตเปิดอีก ${nextOpenDays} วัน)`,
-      'success'
-    ),
+    logs: loanRes.logs,
   };
 }

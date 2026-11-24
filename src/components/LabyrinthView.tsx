@@ -20,7 +20,7 @@ import {
 import { ESSENCES, FLOORS, RACES } from '../data/loreData';
 import { computeVisibleTiles, getEffectiveStats, getSightRadius } from '../engine/gameEngine';
 import { getRiftTypeForFloor } from '../engine/mapGen';
-import { GameState, MonsterInstance } from '../types/game';
+import { GameState, MonsterInstance, PartyTactic } from '../types/game';
 
 interface LabyrinthViewProps {
   state: GameState;
@@ -30,6 +30,8 @@ interface LabyrinthViewProps {
   onDescendFloor: () => void;
   onEnterRift: () => void;
   onRacialSkill: () => void;
+  onMasterySkill: (skill: 'leap' | 'swing' | 'block') => void;
+  onChangeTactic: (tactic: PartyTactic) => void;
   onActivateEssence: (essenceId: string) => void;
   onAbsorbEssence: (dropUid: string) => void;
   onGiveEssenceToAlly: (dropUid: string, memberId: string) => void;
@@ -56,6 +58,8 @@ export function LabyrinthView({
   onDescendFloor,
   onEnterRift,
   onRacialSkill,
+  onMasterySkill,
+  onChangeTactic,
   onActivateEssence,
   onAbsorbEssence,
   onGiveEssenceToAlly,
@@ -108,7 +112,7 @@ export function LabyrinthView({
 
   const visibleTiles = computeVisibleTiles(state);
   const sightRadius = getSightRadius(state);
-  const playerStats = getEffectiveStats(player);
+  const playerStats = getEffectiveStats(player, state.awakenedPartyIds);
 
   const currentTile = grid[player.y]?.[player.x];
   const onExitTile = currentTile === 'exit';
@@ -150,11 +154,13 @@ export function LabyrinthView({
         : 'เข้ารอยแยก: แวมไพร์';
 
   const activeRiftTitle =
-    state.activeRiftType === 'glacial_cave'
-      ? 'รอยแยก: ถ้ำธารน้ำแข็ง (Glacial Cave)'
-      : state.activeRiftType === 'witch_forest'
-        ? 'รอยแยก: ป่าแม่มด (Witch Forest)'
-        : 'รอยแยกชั้นที่ 1 (Vampire Rift)';
+    state.activeRiftType === 'temple_100'
+      ? 'ดันเจี้ยนลับ: วิหารร้อยสี (Temple of 100 Colors)'
+      : state.activeRiftType === 'glacial_cave'
+        ? 'รอยแยก: ถ้ำธารน้ำแข็ง (Glacial Cave)'
+        : state.activeRiftType === 'witch_forest'
+          ? 'รอยแยก: ป่าแม่มด (Witch Forest)'
+          : 'รอยแยกชั้นที่ 1 (Vampire Rift)';
 
   return (
     <div key={state.screenShake} className={`card ${state.screenShake > 0 ? 'shake-anim' : ''}`}>
@@ -187,6 +193,11 @@ export function LabyrinthView({
               <span className="badge badge-success">
                 <Flame size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />
                 คบไฟ: กำลังใช้งานอยู่ ({player.torchTurns} เทิร์น)
+              </span>
+            )}
+            {player.guardTurns > 0 && (
+              <span className="badge badge-success">
+                บล็อก: ลดดาเมจครึ่งหนึ่ง ({player.guardTurns} เทิร์น)
               </span>
             )}
             {player.racialBuffTurns > 0 && (
@@ -479,6 +490,58 @@ export function LabyrinthView({
                   </button>
                 );
               })}
+            </div>
+
+            <div className="hotbar-group">
+              <span className="hotbar-label">สกิลอาวุธ (Lv.{playerStats.weaponMasteryLv}):</span>
+              <button
+                type="button"
+                className="btn btn-sm hotbar-slot"
+                disabled={player.mana < 5}
+                onClick={() => onMasterySkill('leap')}
+                title="กระโดดพุ่งโจมตีศัตรูระยะ 2–4 ช่อง (1.15x ATK)"
+              >
+                กระโดด (5MP)
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm hotbar-slot"
+                disabled={player.mana < 7}
+                onClick={() => onMasterySkill('swing')}
+                title="สวิงฟาดกวาดศัตรูทุกตัวรอบระยะ 1 ช่อง (1.25x ATK)"
+              >
+                สวิง (7MP)
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm hotbar-slot"
+                disabled={player.mana < 4 || player.guardTurns > 0}
+                onClick={() => onMasterySkill('block')}
+                title="ตั้งการ์ดลดความเสียหายจากศัตรู 50% นาน 2 เทิร์น"
+              >
+                บล็อก (4MP){player.guardTurns > 0 ? ` [${player.guardTurns}T]` : ''}
+              </button>
+              {player.party.length > 0 && (
+                <>
+                  <span className="hotbar-label" style={{ marginLeft: 4 }}>กลยุทธ์:</span>
+                  {(
+                    [
+                      ['aggressive', 'บุก'],
+                      ['balanced', 'สมดุล'],
+                      ['defensive', 'ป้องกัน'],
+                    ] as const
+                  ).map(([tKey, tLabel]) => (
+                    <button
+                      key={tKey}
+                      type="button"
+                      className={`btn btn-sm ${state.partyTactic === tKey ? 'btn-primary' : ''}`}
+                      onClick={() => onChangeTactic(tKey)}
+                    >
+                      {tLabel}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
 
             <div className="hotbar-group">

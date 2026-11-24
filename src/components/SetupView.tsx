@@ -10,9 +10,12 @@ import {
   User,
 } from 'lucide-react';
 import { RACES } from '../data/loreData';
+import { getSlotSummaries, SaveSlotId } from '../engine/storage';
 import { GameMode, RaceId } from '../types/game';
 
 interface SetupViewProps {
+  activeSlot: SaveSlotId;
+  onSelectSlot: (slot: SaveSlotId) => void;
   onStartGame: (mode: GameMode, raceId: RaceId, customName: string) => void;
 }
 
@@ -25,10 +28,11 @@ const RACE_ORDER: RaceId[] = [
   'dragonkin',
 ];
 
-export function SetupView({ onStartGame }: SetupViewProps) {
+export function SetupView({ activeSlot, onSelectSlot, onStartGame }: SetupViewProps) {
   const [mode, setMode] = useState<GameMode>('story');
   const [raceId, setRaceId] = useState<RaceId>('barbarian');
   const [customName, setCustomName] = useState('');
+  const slots = getSlotSummaries();
 
   const effectiveRaceId: RaceId = mode === 'story' ? 'barbarian' : raceId;
   const selectedRace = RACES[effectiveRaceId];
@@ -38,6 +42,37 @@ export function SetupView({ onStartGame }: SetupViewProps) {
       {/* Left Grimoire Page */}
       <div className="card setup-page">
         <div style={{ display: 'grid', gap: 12 }}>
+          <div
+            className="stat-box"
+            style={{
+              padding: '8px 10px',
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-bright)' }}>
+              ช่องบันทึก (Save Slots):
+            </span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {slots.map((s) => (
+                <button
+                  key={s.slot}
+                  type="button"
+                  className={`btn btn-sm ${activeSlot === s.slot ? 'btn-primary' : ''}`}
+                  onClick={() => onSelectSlot(s.slot)}
+                >
+                  S{s.slot}:{' '}
+                  {s.empty
+                    ? 'ว่าง'
+                    : `${s.name} (D${s.day} · R${s.rank}${s.ngPlusCount ? ` · NG+${s.ngPlusCount}` : ''})`}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div>
             <h2>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ChevronDown,
   Coins,
+  Crown,
   RotateCcw,
   ScrollText,
+  Sparkles,
   Swords,
   Volume2,
   VolumeX,
@@ -18,6 +20,7 @@ import {
   absorbStoredVial,
   advanceClosedCycle,
   auctionSellEssenceVial,
+  awakenPartyMember,
   buyAuctionEssence,
   buyCommunityOffer,
   buyEssenceBook,
@@ -25,54 +28,72 @@ import {
   buyRank7Lore,
   buyRoundAtTavern,
   claimStoryQuest,
+  dismissExpeditionSummary,
   dismissPartyMember,
   drinkAtTavern,
   extractEssenceAtTemple,
   freeTavernGossip,
   hirePartyMember,
   payTaxInCity,
+  promoteExplorerRank,
   purifyCursesAtTemple,
   refreshDailyNews,
+  registerEssenceAtGuild,
   repairArmorInCity,
+  repayBankLoan,
   rerollTavernMercenaries,
   restAtInn,
   sellAllMagicStones,
   sellEssenceVial,
+  setPartyTactic,
   switchCity,
+  takeBankLoan,
   useGamerKnowledge,
 } from './engine/cityActions';
 import {
   absorbDroppedEssence,
   activateEssenceSkill,
+  activateMasterySkill,
   activateRacialSkill,
   bottleDroppedEssence,
   createInitialGameState,
   descendNextFloor,
   enterLabyrinth,
   enterRift,
+  enterTemple100,
   equipItemFromInventory,
   exitRiftToFloor,
   giveEssenceToPartyMember,
   resolveRandomEvent,
   returnToCity,
   startGameWithSetup,
+  startNewGamePlus,
   stepPlayer,
   useConsumable,
 } from './engine/gameEngine';
 import { playSfx, SfxType } from './engine/sound';
-import { clearSavedGame, loadGameState, saveGameState } from './engine/storage';
+import {
+  clearSavedGame,
+  getActiveSlot,
+  loadGameState,
+  saveGameState,
+  SaveSlotId,
+  setActiveSlot,
+} from './engine/storage';
 
 export default function App() {
-  const [state, setState] = useState(() => loadGameState() ?? createInitialGameState());
+  const [activeSlot, setActiveSlotState] = useState<SaveSlotId>(() => getActiveSlot());
+  const [state, setState] = useState(() => loadGameState(getActiveSlot()) ?? createInitialGameState());
   const [showAllLogs, setShowAllLogs] = useState(false);
+  const [showLogPanel, setShowLogPanel] = useState(true);
   const [loadoutTab, setLoadoutTab] = useState<LoadoutTab | null>(null);
   const [showCommunity, setShowCommunity] = useState(false);
 
   useEffect(() => {
     if (state.phase !== 'setup') {
-      saveGameState(state);
+      saveGameState(state, activeSlot);
     }
-  }, [state]);
+  }, [state, activeSlot]);
 
   useEffect(() => {
     if (!state.lastSfx) return;
@@ -99,8 +120,16 @@ export default function App() {
     setState((prev) => stepPlayer(prev, dx, dy));
   }, []);
 
+  const handleSelectSlot = (slot: SaveSlotId) => {
+    setActiveSlot(slot);
+    setActiveSlotState(slot);
+    setLoadoutTab(null);
+    setShowCommunity(false);
+    setState(loadGameState(slot) ?? createInitialGameState());
+  };
+
   const handleResetGame = () => {
-    clearSavedGame();
+    clearSavedGame(activeSlot);
     setLoadoutTab(null);
     setShowCommunity(false);
     setState(createInitialGameState());
@@ -119,6 +148,19 @@ export default function App() {
           </h1>
         </div>
         <div className="resource-pills">
+          <div style={{ display: 'flex', gap: 4 }}>
+            {([1, 2, 3] as SaveSlotId[]).map((slot) => (
+              <button
+                key={slot}
+                type="button"
+                className={`btn btn-sm ${activeSlot === slot ? 'btn-primary' : ''}`}
+                onClick={() => handleSelectSlot(slot)}
+                title={`สลับไปยังช่องเซฟที่ ${slot}`}
+              >
+                S{slot}
+              </button>
+            ))}
+          </div>
           {state.phase !== 'setup' && (
             <>
               <div className="pill">วันที่ {state.day}</div>
@@ -139,7 +181,7 @@ export default function App() {
                 type="button"
                 className="btn btn-sm"
                 onClick={handleResetGame}
-                title="ล้างเซฟและเริ่มใหม่"
+                title="ล้างเซฟช่องนี้และเริ่มใหม่"
               >
                 <RotateCcw size={14} /> เริ่มใหม่
               </button>
@@ -154,15 +196,21 @@ export default function App() {
                   : 'เมืองลาฟโดเนีย'
                 : state.phase === 'labyrinth'
                   ? state.inRift
-                    ? 'รอยแยก'
+                    ? state.activeRiftType === 'temple_100'
+                      ? 'วิหารร้อยสี'
+                      : 'รอยแยก'
                     : `เขาวงกตชั้นที่ ${state.currentFloor}`
-                  : 'Game Over'}
+                  : state.phase === 'victory'
+                    ? 'พิชิตเขาวงกต!'
+                    : 'Game Over'}
           </div>
         </div>
       </header>
 
       {state.phase === 'setup' ? (
         <SetupView
+          activeSlot={activeSlot}
+          onSelectSlot={handleSelectSlot}
           onStartGame={(mode, raceId, name) =>
             setState(startGameWithSetup(mode, raceId, name))
           }
@@ -192,6 +240,9 @@ export default function App() {
                   onRestInn={() => setState((prev) => restAtInn(prev))}
                   onAdvanceClosedCycle={() => setState((prev) => advanceClosedCycle(prev))}
                   onEnterLabyrinth={(floor) => setState((prev) => enterLabyrinth(prev, floor))}
+                  onEnterTemple100={() => setState((prev) => enterTemple100(prev))}
+                  onSetPartyTactic={(tactic) => setState((prev) => setPartyTactic(prev, tactic))}
+                  onAwakenParty={(memberId) => setState((prev) => awakenPartyMember(prev, memberId))}
                   onSwitchCity={(city) => setState((prev) => switchCity(prev, city))}
                   onOpenCommunity={() => setShowCommunity(true)}
                   onRefreshNews={() => setState((prev) => refreshDailyNews(prev))}
@@ -200,6 +251,10 @@ export default function App() {
                   onBuyRoundTavern={() => setState((prev) => buyRoundAtTavern(prev))}
                   onBuyEssenceBook={(tier) => setState((prev) => buyEssenceBook(prev, tier))}
                   onRerollMercenaries={() => setState((prev) => rerollTavernMercenaries(prev))}
+                  onPromoteRank={() => setState((prev) => promoteExplorerRank(prev))}
+                  onRegisterEssence={(eid) => setState((prev) => registerEssenceAtGuild(prev, eid))}
+                  onTakeLoan={(amt) => setState((prev) => takeBankLoan(prev, amt))}
+                  onRepayLoan={() => setState((prev) => repayBankLoan(prev))}
                 />
               )}
 
@@ -212,6 +267,8 @@ export default function App() {
                   onDescendFloor={() => setState((prev) => descendNextFloor(prev))}
                   onEnterRift={() => setState((prev) => enterRift(prev))}
                   onRacialSkill={() => setState((prev) => activateRacialSkill(prev))}
+                  onMasterySkill={(skill) => setState((prev) => activateMasterySkill(prev, skill))}
+                  onChangeTactic={(tactic) => setState((prev) => setPartyTactic(prev, tactic))}
                   onActivateEssence={(id) => setState((prev) => activateEssenceSkill(prev, id))}
                   onAbsorbEssence={(uid) => setState((prev) => absorbDroppedEssence(prev, uid))}
                   onGiveEssenceToAlly={(uid, memberId) =>
@@ -220,6 +277,48 @@ export default function App() {
                   onBottleEssence={(uid) => setState((prev) => bottleDroppedEssence(prev, uid))}
                   onUseConsumable={(itemId) => setState((prev) => useConsumable(prev, itemId))}
                 />
+              )}
+
+              {state.phase === 'victory' && (
+                <div className="card" style={{ borderColor: 'var(--border-gold)', display: 'grid', gap: 12 }}>
+                  <h2 style={{ color: '#fde68a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Crown size={20} color="#fbbf24" />
+                    {state.victoryEndingTitle || 'ตำนานผู้พิชิตวิหารร้อยสี'}
+                  </h2>
+                  <p style={{ fontSize: '0.96rem', color: '#e6dac8', margin: 0, lineHeight: 1.6 }}>
+                    {state.victoryEndingDesc}
+                  </p>
+                  <div className="summary-grid">
+                    <div className="rune-stat">
+                      <span className="rune-label">ระดับผู้สำรวจ</span>
+                      <strong>Rank {state.player.explorerRank} (Lv.{state.player.level})</strong>
+                    </div>
+                    <div className="rune-stat">
+                      <span className="rune-label">ระยะเวลารอดชีวิต</span>
+                      <strong>วันที่ {state.day}</strong>
+                    </div>
+                    <div className="rune-stat">
+                      <span className="rune-label">รอบการบันทึก</span>
+                      <strong>NG+{state.ngPlusCount}</strong>
+                    </div>
+                    <div className="rune-stat">
+                      <span className="rune-label">Rift Stones</span>
+                      <strong>{state.player.riftStones} ชิ้น</strong>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-lore"
+                      onClick={() => setState((prev) => startNewGamePlus(prev))}
+                    >
+                      <Sparkles size={16} /> [เศษเสี้ยวแห่งบันทึก] เริ่มรอบ NG+{state.ngPlusCount + 1}
+                    </button>
+                    <button type="button" className="btn btn-primary" onClick={handleResetGame}>
+                      <RotateCcw size={15} /> ล้างเซฟและเริ่มใหม่
+                    </button>
+                  </div>
+                </div>
               )}
 
               {state.phase === 'gameover' && (
@@ -233,20 +332,20 @@ export default function App() {
               )}
             </div>
 
-            <div className="card log-panel" style={{ padding: '10px 14px' }}>
+            <div className="card log-panel" style={{ padding: '8px 14px' }}>
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: 8,
+                  marginBottom: showLogPanel ? 8 : 0,
                 }}
               >
                 <span
                   style={{
                     fontSize: '0.92rem',
                     fontWeight: 700,
-                    color: '#f59e0b',
+                    color: 'var(--accent-bright)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 6,
@@ -254,27 +353,38 @@ export default function App() {
                 >
                   <ScrollText size={15} /> บันทึกเหตุการณ์ล่าสุด
                 </span>
-                {state.logs.length > 2 && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {showLogPanel && state.logs.length > 2 && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => setShowAllLogs((v) => !v)}
+                    >
+                      {showAllLogs ? 'ย่อบันทึก' : `ดูทั้งหมด (${state.logs.length})`}
+                      <ChevronDown
+                        size={14}
+                        className={`chevron ${showAllLogs ? 'chevron-open' : ''}`}
+                      />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-sm"
-                    onClick={() => setShowAllLogs((v) => !v)}
+                    onClick={() => setShowLogPanel((v) => !v)}
                   >
-                    {showAllLogs ? 'ย่อบันทึก' : `ดูทั้งหมด (${state.logs.length})`}
-                    <ChevronDown
-                      size={14}
-                      className={`chevron ${showAllLogs ? 'chevron-open' : ''}`}
-                    />
+                    {showLogPanel ? 'ซ่อนบันทึก' : 'แสดงบันทึก'}
                   </button>
-                )}
+                </div>
               </div>
-              <div className={`log-box ${showAllLogs ? 'log-box-expanded' : ''}`}>
-                {visibleLogs.map((log) => (
-                  <div key={log.id} className={`log-item log-${log.tone}`}>
-                    <strong>[T{log.turn}]</strong> {log.text}
-                  </div>
-                ))}
-              </div>
+              {showLogPanel && (
+                <div className={`log-box ${showAllLogs ? 'log-box-expanded' : ''}`}>
+                  {visibleLogs.map((log) => (
+                    <div key={log.id} className={`log-item log-${log.tone}`}>
+                      <strong>[T{log.turn}]</strong> {log.text}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -299,6 +409,55 @@ export default function App() {
           onClaimQuest={(qid) => setState((prev) => claimStoryQuest(prev, qid))}
           onBuyOffer={(oid) => setState((prev) => buyCommunityOffer(prev, oid))}
         />
+      )}
+
+      {state.lastExpeditionSummary && !state.activeEvent && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h2 style={{ margin: '0 0 8px', color: 'var(--accent-bright)', fontSize: '1.14rem' }}>
+              สรุปผลการสำรวจเขาวงกต
+            </h2>
+            <p style={{ fontSize: '0.88rem', color: 'var(--muted)', margin: '0 0 12px' }}>
+              บันทึกการเดินทางกลับจากเขาวงกตเข้าสู่เมืองอย่างปลอดภัย
+            </p>
+            <div className="summary-grid">
+              <div className="rune-stat">
+                <span className="rune-label">ชั้นลึกสุด</span>
+                <strong>ชั้นที่ {state.lastExpeditionSummary.deepestFloor}</strong>
+              </div>
+              <div className="rune-stat">
+                <span className="rune-label">เวลาที่ใช้</span>
+                <strong>{state.lastExpeditionSummary.turnsSpent} เทิร์น</strong>
+              </div>
+              <div className="rune-stat">
+                <span className="rune-label">มอนสเตอร์ที่ปราบ</span>
+                <strong>{state.lastExpeditionSummary.kills} ตัว</strong>
+              </div>
+              <div className="rune-stat">
+                <span className="rune-label">Magic Stone</span>
+                <strong>+{state.lastExpeditionSummary.stonesGained} ชิ้น</strong>
+              </div>
+            </div>
+            {state.lastExpeditionSummary.essencesObtained.length > 0 && (
+              <div className="stat-box" style={{ marginBottom: 12, borderColor: 'var(--lore)' }}>
+                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#e9d8fd', marginBottom: 4 }}>
+                  แก่นแท้ที่ได้รับในรอบนี้:
+                </div>
+                <div style={{ fontSize: '0.84rem', color: 'var(--text)' }}>
+                  {state.lastExpeditionSummary.essencesObtained.join(', ')}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+              onClick={() => setState((prev) => dismissExpeditionSummary(prev))}
+            >
+              ปิดสรุปผล
+            </button>
+          </div>
+        </div>
       )}
 
       {state.activeEvent && (

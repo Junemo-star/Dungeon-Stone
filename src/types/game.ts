@@ -1,4 +1,4 @@
-export type GamePhase = 'setup' | 'city' | 'labyrinth' | 'gameover';
+export type GamePhase = 'setup' | 'city' | 'labyrinth' | 'victory' | 'gameover';
 
 export type GameMode = 'story' | 'custom';
 
@@ -6,9 +6,15 @@ export type CityId = 'lafdonia' | 'noark';
 
 export type FloorId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-export type RiftType = 'vampire_rift' | 'glacial_cave' | 'witch_forest';
+export type RiftType = 'vampire_rift' | 'glacial_cave' | 'witch_forest' | 'temple_100';
 
 export type PartyRole = 'archer' | 'striker' | 'tank' | 'mage';
+
+export type PartyTactic = 'aggressive' | 'balanced' | 'defensive';
+
+export type WeaponClass = 'hammer' | 'axe' | 'sword';
+
+export type NoarkWarChoice = 'none' | 'royalty' | 'noark' | 'chaos';
 
 export type RaceId =
   | 'barbarian'
@@ -19,6 +25,16 @@ export type RaceId =
   | 'dragonkin';
 
 export type EssenceColor = 'Gray' | 'Green' | 'Purple' | 'Red' | 'Blue';
+
+export type ExplorerRank = 9 | 8 | 7 | 6 | 5;
+
+export interface ExpeditionSummary {
+  deepestFloor: FloorId;
+  kills: number;
+  turnsSpent: number;
+  stonesGained: number;
+  essencesObtained: string[];
+}
 
 export type EssenceSynergyTag = 'iron' | 'shadow' | 'blood' | 'arcane' | 'beast';
 
@@ -173,6 +189,9 @@ export interface Item {
   cureBleed?: boolean;
   reduceCurse?: number;
   isShipLicense?: boolean;
+  weaponClass?: WeaponClass;
+  piercesSpirit?: boolean;
+  riftStoneCost?: number;
 }
 
 export interface InventoryItem {
@@ -212,6 +231,7 @@ export interface MonsterTemplate {
   isClone?: boolean;
   enragesAtHalf?: boolean;
   isBoss?: boolean;
+  isSpirit?: boolean;
   symbol: string;
   description: string;
 }
@@ -323,6 +343,11 @@ export interface PlayerState {
   racialBuffTurns: number;
   assimilationTurns: number;
   keenFocusActive: boolean;
+  explorerRank: ExplorerRank;
+  registeredEssenceIds: string[];
+  riftStones: number;
+  guardTurns: number;
+  weaponMastery: Record<WeaponClass, number>;
 }
 
 export interface GameState {
@@ -355,6 +380,17 @@ export interface GameState {
   auctionListings: AuctionListing[];
   freeRumorUsedToday: boolean;
   dailyNews: string;
+  loanDebt: number;
+  loanDueDay: number;
+  expeditionStats: ExpeditionSummary | null;
+  lastExpeditionSummary: ExpeditionSummary | null;
+  partyTactic: PartyTactic;
+  partyTrust: Record<string, number>;
+  awakenedPartyIds: string[];
+  noarkWarChoice: NoarkWarChoice;
+  ngPlusCount: number;
+  victoryEndingTitle?: string;
+  victoryEndingDesc?: string;
   soundMuted: boolean;
   popups: FloatingPopup[];
   lastSfx: string | null;

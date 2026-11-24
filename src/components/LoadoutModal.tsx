@@ -40,7 +40,7 @@ export function LoadoutModal({
   onAbsorbStoredVial,
 }: LoadoutModalProps) {
   const { player } = state;
-  const stats = getEffectiveStats(player);
+  const stats = getEffectiveStats(player, state.awakenedPartyIds);
   const [filter, setFilter] = useState<InventoryFilter>('all');
   const [codexSubTab, setCodexSubTab] = useState<CodexSubTab>('monsters');
   const [essenceFilter, setEssenceFilter] = useState<EssenceFilter>('all');
@@ -208,6 +208,9 @@ export function LoadoutModal({
                     </div>
                     <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: 2 }}>
                       +{weapon?.attackBonus ?? 0} Attack · {weapon?.weight ?? 0} kg
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#fde68a', marginTop: 4 }}>
+                      Weapon Mastery Lv.{stats.weaponMasteryLv} (XP {player.weaponMastery?.[weapon?.weaponClass ?? 'hammer'] ?? 0})
                     </div>
                   </div>
 
@@ -490,10 +493,17 @@ export function LoadoutModal({
                       <img src={member.portraitUrl} alt={member.name} className="portrait-img" />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: '1rem', color: '#fbbf24' }}>
-                        {member.name} <span className="badge">Lv.{member.level}</span>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', color: '#fbbf24', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                        <span>{member.name}</span>
+                        <span className="badge">Lv.{member.level}</span>
+                        <span className="badge" style={{ background: '#2d3748', color: '#fde68a' }}>
+                          Trust {state.partyTrust[member.id] ?? 0}/100
+                        </span>
+                        {state.awakenedPartyIds.includes(member.id) && (
+                          <span className="badge badge-success">ปลุกพลังแล้ว</span>
+                        )}
                         {member.absorbedEssenceName && (
-                          <span className="badge badge-lore" style={{ marginLeft: 6 }}>
+                          <span className="badge badge-lore">
                             {member.absorbedEssenceName}
                           </span>
                         )}
