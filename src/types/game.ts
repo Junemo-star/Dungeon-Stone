@@ -2,7 +2,11 @@ export type GamePhase = 'setup' | 'city' | 'labyrinth' | 'gameover';
 
 export type GameMode = 'story' | 'custom';
 
+export type CityId = 'lafdonia' | 'noark';
+
 export type FloorId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export type RiftType = 'vampire_rift' | 'glacial_cave' | 'witch_forest';
 
 export type PartyRole = 'archer' | 'striker' | 'tank' | 'mage';
 
@@ -15,6 +19,19 @@ export type RaceId =
   | 'dragonkin';
 
 export type EssenceColor = 'Gray' | 'Green' | 'Purple' | 'Red' | 'Blue';
+
+export type EssenceSynergyTag = 'iron' | 'shadow' | 'blood' | 'arcane' | 'beast';
+
+export type EssenceKnowledgeLevel = 'unknown' | 'rumor' | 'guild' | 'verified';
+
+export type EssenceBookTier = 'rank9' | 'mid' | 'high';
+
+export interface AuctionListing {
+  id: string;
+  essenceId: string;
+  price: number;
+  sold?: boolean;
+}
 
 export interface CharacterStats {
   physique: {
@@ -56,6 +73,9 @@ export interface PartyMemberTemplate {
   hireCost: number;
   canAbsorbEssence: boolean;
   description: string;
+  isMainCharacter?: boolean;
+  tierLabel?: string;
+  unlockHint?: string;
 }
 
 export interface PartyMemberInstance {
@@ -65,10 +85,14 @@ export interface PartyMemberInstance {
   role: PartyRole;
   roleLabel: string;
   portraitUrl: string;
+  level: number;
   hp: number;
   maxHp: number;
   attack: number;
   defense: number;
+  canAbsorbEssence: boolean;
+  absorbedEssenceName?: string;
+  isMainCharacter?: boolean;
 }
 
 export interface EssenceSkill {
@@ -85,6 +109,8 @@ export interface Essence {
   rank: number;
   color: EssenceColor;
   marketValue: number;
+  synergyTag: EssenceSynergyTag;
+  rumorText: string;
   activeSkill: EssenceSkill;
   passiveName: string;
   passiveDescription: string;
@@ -98,6 +124,13 @@ export interface Essence {
     obsession?: number;
   };
   hasAcidFluid?: boolean;
+  extraThirstDrain?: number;
+  noPotionHeal?: boolean;
+  drawbackText?: string;
+  rangedVulnPct?: number;
+  curseVulnBonus?: number;
+  extraManaCost?: number;
+  armorWearExtra?: number;
   autoRegenHp?: number;
   stoneBonusPct?: number;
 }
@@ -112,6 +145,7 @@ export type ItemType =
   | 'armor'
   | 'shield'
   | 'bag'
+  | 'number_item'
   | 'consumable'
   | 'utility'
   | 'magic_stone'
@@ -127,6 +161,11 @@ export interface Item {
   attackBonus?: number;
   defenseBonus?: number;
   weightCapacityBonus?: number;
+  critBonusPct?: number;
+  regenHpBonus?: number;
+  flexBonus?: number;
+  visionBonus?: number;
+  reduceSuspicion?: number;
   acidResistant?: boolean;
   restoreThirst?: number;
   restoreHp?: number;
@@ -218,6 +257,14 @@ export interface DroppedLoot {
   magicStones: number;
 }
 
+export interface FloatingPopup {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+}
+
 export interface RandomEventChoice {
   label: string;
   effectKey: string;
@@ -258,6 +305,8 @@ export interface PlayerState {
   blindTurns: number;
   torchTurns: number;
   hasShipLicense: boolean;
+  gp: number;
+  suspicion: number;
   baseStats: CharacterStats;
   essences: Essence[];
   maxEssenceSlots: number;
@@ -266,6 +315,7 @@ export interface PlayerState {
   equippedWeaponId: string;
   equippedArmorId: string;
   equippedShieldId: string | null;
+  equippedNumberItemId: string | null;
   hasExpandableBag: boolean;
   party: PartyMemberInstance[];
   x: number;
@@ -278,20 +328,37 @@ export interface PlayerState {
 export interface GameState {
   phase: GamePhase;
   mode: GameMode;
+  cityId: CityId;
+  unlockedNoark: boolean;
   day: number;
   turn: number;
   gold: number;
   livingCostPerDay: number;
   currentFloor: FloorId;
   inRift: boolean;
+  activeRiftType: RiftType | null;
   floorBossDefeated: boolean;
   killsOnFloor: number;
+  turnsOnCurrentFloor: number;
+  cannibaloSpawned: boolean;
   discoveredFloors: FloorId[];
   labyrinthOpenDaysLeft: number;
   taxDue: number;
   taxDeadlineDay: number;
   gamerKnowledgeUsed: boolean;
   unlockedCorpseGolemLore: boolean;
+  claimedQuestIds: string[];
+  purchasedCommunityIds: string[];
+  essenceKnowledge: Record<string, EssenceKnowledgeLevel>;
+  purchasedEssenceBooks: EssenceBookTier[];
+  tavernMercenaries: PartyMemberTemplate[];
+  auctionListings: AuctionListing[];
+  freeRumorUsedToday: boolean;
+  dailyNews: string;
+  soundMuted: boolean;
+  popups: FloatingPopup[];
+  lastSfx: string | null;
+  screenShake: number;
   activeEvent: RandomEvent | null;
   player: PlayerState;
   grid: TileType[][];

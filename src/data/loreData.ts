@@ -1,10 +1,16 @@
 import {
+  AuctionListing,
+  CityId,
   Essence,
+  EssenceBookTier,
+  EssenceSynergyTag,
   FloorDefinition,
   FloorId,
+  GameState,
   Item,
   MonsterTemplate,
   PartyMemberTemplate,
+  PartyRole,
   RaceDefinition,
   RaceId,
 } from '../types/game';
@@ -202,6 +208,7 @@ export const PARTY_ROSTER: Record<string, PartyMemberTemplate> = {
     defense: 3,
     hireCost: 90,
     canAbsorbEssence: true,
+    isMainCharacter: true,
     description: 'แฟรี่สายธนู ยิงสนับสนุนระยะ 4 ช่อง และเพิ่มระยะการมองเห็น (+2 Vision) ให้ทั้งทีม',
   },
   misha: {
@@ -216,6 +223,8 @@ export const PARTY_ROSTER: Record<string, PartyMemberTemplate> = {
     defense: 4,
     hireCost: 110,
     canAbsorbEssence: true,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อกำจัดมอนสเตอร์ต่างชนิดครบ 3 ชนิด หรือเคลียร์ภารกิจ "บททดสอบแรกในถ้ำคริสตัล"',
     description: 'บีสต์แมนผู้ว่องไว ฟันมอนสเตอร์ระยะประชิดช่วยปิดฉากศัตรูได้อย่างรวดเร็ว',
   },
   murad: {
@@ -230,6 +239,8 @@ export const PARTY_ROSTER: Record<string, PartyMemberTemplate> = {
     defense: 10,
     hireCost: 120,
     canAbsorbEssence: true,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อค้นพบเขาวงกตชั้นที่ 2 หรือเปิดเส้นทางสู่เมืองใต้ดินโนอาร์ค',
     description: 'ดวอร์ฟแทงก์ผู้ตั้งกำแพงโล่ ช่วยรับความเสียหายแทนคุณ 35% และลดการสึกหรอของเกราะ',
   },
   mage: {
@@ -244,9 +255,178 @@ export const PARTY_ROSTER: Record<string, PartyMemberTemplate> = {
     defense: 2,
     hireCost: 140,
     canAbsorbEssence: false,
+    isMainCharacter: true,
+    unlockHint: 'ปลดล็อกเมื่อค้นพบเขาวงกตชั้นที่ 3 หรือซื้อข้อมูล/ตำราแก่นแท้จากกิลด์อย่างน้อย 1 รายการ',
     description: 'ร่ายเวทระดับแปด [หอกน้ำแข็ง] โจมตีทะลุเกราะระยะไกล (ดูดซับแก่นแท้ไม่ได้)',
   },
 };
+
+export function isMainCharacterUnlocked(state: GameState, memberId: string): boolean {
+  switch (memberId) {
+    case 'erwen':
+      return true;
+    case 'misha':
+      return (
+        state.player.defeatedMonsterIds.length >= 3 ||
+        state.claimedQuestIds.includes('quest_crystal_survivor')
+      );
+    case 'murad':
+      return state.discoveredFloors.includes(2) || state.unlockedNoark;
+    case 'mage':
+      return (
+        state.discoveredFloors.includes(3) ||
+        state.unlockedCorpseGolemLore ||
+        state.purchasedEssenceBooks.length > 0
+      );
+    default:
+      return true;
+  }
+}
+
+interface MercRacePool {
+  race: string;
+  portraitUrl: string;
+  names: string[];
+}
+
+const MERC_RACES: MercRacePool[] = [
+  {
+    race: 'Human',
+    portraitUrl: '/images/race_human.jpg',
+    names: ['การ์เรน', 'ซีออน', 'มาร์คัส', 'เอเลน่า', 'ลูคัส', 'ไคล์'],
+  },
+  {
+    race: 'Barbarian',
+    portraitUrl: '/images/race_barbarian.jpg',
+    names: ['คาร์ซาน', 'บรอม', 'ทอร์ก', 'ดราโก้', 'ฮาร์คัน'],
+  },
+  {
+    race: 'Beastman',
+    portraitUrl: '/images/race_beastman.jpg',
+    names: ['เฟนริส', 'ไคโตะ', 'นีร่า', 'เร็กซ์', 'ชาร์ป'],
+  },
+  {
+    race: 'Dwarf',
+    portraitUrl: '/images/race_dwarf.jpg',
+    names: ['ดูริน', 'บรอน', 'โกริน', 'ทอริน', 'ธาเน่'],
+  },
+  {
+    race: 'Elf',
+    portraitUrl: '/images/race_elf.jpg',
+    names: ['ลิเรียน', 'เอลดริน', 'ซีลีน', 'ฟาเอล', 'อาริเอล'],
+  },
+  {
+    race: 'Dragonkin',
+    portraitUrl: '/images/race_dragonkin.jpg',
+    names: ['วอลแคน', 'อิกนิส', 'คาลิส', 'ราเซน'],
+  },
+];
+
+const MERC_TIERS = [
+  { label: 'หน้าใหม่', hpMul: 0.84, atkMul: 0.85, defMul: 0.85, costMul: 0.72 },
+  { label: 'มือเก๋า', hpMul: 1.0, atkMul: 1.0, defMul: 1.0, costMul: 1.0 },
+  { label: 'นักลุยเดนตาย', hpMul: 1.18, atkMul: 1.16, defMul: 1.15, costMul: 1.28 },
+];
+
+const ROLE_BASE_PROFILE: Record<
+  PartyRole,
+  { roleLabel: string; maxHp: number; attack: number; defense: number; baseCost: number; descLaf: string; descNoark: string }
+> = {
+  tank: {
+    roleLabel: 'แทงก์แนวหน้า (รับดาเมจ 35%)',
+    maxHp: 112,
+    attack: 9,
+    defense: 8,
+    baseCost: 95,
+    descLaf: 'ทหารรับจ้างสายป้องกัน ยืนรับแรงปะทะแนวหน้าช่วยซับดาเมจให้คุณ 35%',
+    descNoark: 'นักสู้โล่เหล็กแห่งใต้ดิน รับจ้างยืนชนศัตรูเพื่อแลกส่วนแบ่งหินเวท (รับดาเมจแทน 35%)',
+  },
+  striker: {
+    roleLabel: 'นักดาบจู่โจมระยะประชิด',
+    maxHp: 82,
+    attack: 14,
+    defense: 4,
+    baseCost: 92,
+    descLaf: 'นักสำรวจสายประชิด คอยฟันซ้ำมอนสเตอร์ที่อยู่ใกล้ตัวคุณทุกเทิร์น',
+    descNoark: 'มือสังหารเงาจากโนอาร์ค ถนัดซ้ำศัตรูระยะประชิดอย่างดุดัน',
+  },
+  archer: {
+    roleLabel: 'พลธนู / สเกาท์ (+1 Vision)',
+    maxHp: 66,
+    attack: 12,
+    defense: 3,
+    baseCost: 86,
+    descLaf: 'หน่วยลาดตระเวนยิงธนูสนับสนุนระยะ 4 ช่อง และช่วยเพิ่มระยะมองเห็น (+1 Vision)',
+    descNoark: 'สเกาท์ใต้ดินตาไว ยิงหน้าไม้สนับสนุนระยะ 4 ช่อง (+1 Vision)',
+  },
+  mage: {
+    roleLabel: 'จอมเวท (ยิงทะลุเกราะ)',
+    maxHp: 58,
+    attack: 17,
+    defense: 2,
+    baseCost: 112,
+    descLaf: 'จอมเวทอิสระร่ายเวทโจมตีทะลุเกราะระยะ 4 ช่อง (ดูดซับแก่นแท้ไม่ได้ตามกฎ)',
+    descNoark: 'จอมเวทนอกรีตแห่งโนอาร์ค ร่ายเวทมืดทะลุเกราะระยะไกล (ดูดซับแก่นแท้ไม่ได้)',
+  },
+};
+
+export function generateRandomMercenaries(
+  count = 4,
+  day = 1,
+  cityId: CityId = 'lafdonia'
+): PartyMemberTemplate[] {
+  const roles: PartyRole[] = ['tank', 'striker', 'archer', 'mage'];
+  for (let i = roles.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [roles[i], roles[j]] = [roles[j], roles[i]];
+  }
+
+  const usedNames = new Set<string>();
+  const result: PartyMemberTemplate[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const role = roles[i % roles.length];
+    const base = ROLE_BASE_PROFILE[role];
+    const preferredRaces =
+      role === 'tank'
+        ? MERC_RACES.filter((r) => ['Dwarf', 'Barbarian', 'Dragonkin', 'Human'].includes(r.race))
+        : role === 'archer'
+          ? MERC_RACES.filter((r) => ['Elf', 'Beastman', 'Human'].includes(r.race))
+          : role === 'mage'
+            ? MERC_RACES.filter((r) => ['Human', 'Elf', 'Dragonkin'].includes(r.race))
+            : MERC_RACES;
+
+    const racePool = preferredRaces[Math.floor(Math.random() * preferredRaces.length)];
+    const availableNames = racePool.names.filter((n) => !usedNames.has(n));
+    const chosenName =
+      availableNames.length > 0
+        ? availableNames[Math.floor(Math.random() * availableNames.length)]
+        : `${racePool.names[0]} #${i + 1}`;
+    usedNames.add(chosenName);
+
+    const tier = MERC_TIERS[Math.floor(Math.random() * MERC_TIERS.length)];
+    const variance = Math.floor(Math.random() * 3) - 1;
+
+    result.push({
+      id: `merc_${day}_${i}_${Math.floor(Math.random() * 100000)}`,
+      name: `${chosenName} (${tier.label})`,
+      race: racePool.race,
+      role,
+      roleLabel: base.roleLabel,
+      portraitUrl: racePool.portraitUrl,
+      maxHp: Math.max(45, Math.round(base.maxHp * tier.hpMul) + variance * 3),
+      attack: Math.max(7, Math.round(base.attack * tier.atkMul) + variance),
+      defense: Math.max(1, Math.round(base.defense * tier.defMul)),
+      hireCost: Math.max(50, Math.round((base.baseCost * tier.costMul) / 5) * 5),
+      canAbsorbEssence: role !== 'mage',
+      isMainCharacter: false,
+      tierLabel: tier.label,
+      description: cityId === 'noark' ? base.descNoark : base.descLaf,
+    });
+  }
+
+  return result;
+}
 
 export const ESSENCES: Record<string, Essence> = {
   gnome: {
@@ -256,6 +436,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 9,
     color: 'Gray',
     marketValue: 90,
+    synergyTag: 'shadow',
+    rumorText: 'เขาว่ากันว่าช่วยพรางตัวให้กลมกลืนกับหินในชั้น 1 ได้นิดหน่อย แต่ตอนพรางตัวห้ามขยับนะ...',
     activeSkill: {
       name: 'Assimilation',
       manaCost: 8,
@@ -263,7 +445,8 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Clay Agility',
     passiveDescription: 'เพิ่ม Flexibility +2 ช่วยหลบหลีกและเพิ่มโอกาสคริติคอล',
-    statBonus: { flexibility: 2 },
+    statBonus: { flexibility: 2, strength: -1 },
+    drawbackText: 'Strength -1 (โครงสร้างร่างกายอ่อนแรงลงเล็กน้อย)',
   },
   goblin_swordsman: {
     id: 'goblin_swordsman',
@@ -272,6 +455,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 9,
     color: 'Green',
     marketValue: 100,
+    synergyTag: 'shadow',
+    rumorText: 'ได้ยินในร้านเหล้าว่าเพิ่มความแม่นยำกับสายตานิดหน่อย เหมาะกับนักสำรวจมือใหม่ราคาไม่แพง',
     activeSkill: {
       name: 'Keen Focus',
       manaCost: 6,
@@ -279,7 +464,27 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Scavenger Eyes',
     passiveDescription: 'เพิ่ม Vision +2 และ Flexibility +1',
-    statBonus: { vision: 2, flexibility: 1 },
+    statBonus: { vision: 2, flexibility: 1, maxHp: -8 },
+    drawbackText: 'Max HP -8 (ความอึดกายภาพลดลง)',
+  },
+  goblin_archer: {
+    id: 'goblin_archer',
+    name: 'แก่นแท้ก็อบลินอาร์เชอร์',
+    monsterName: 'Goblin Archer',
+    rank: 9,
+    color: 'Green',
+    marketValue: 105,
+    synergyTag: 'shadow',
+    rumorText: 'ลือว่าสายธนูอย่างเออร์เวนและมิชาเคยใช้... เพิ่มค่าความหมกมุ่นกับระยะสายตาได้ดีมาก',
+    activeSkill: {
+      name: '[ยิงเร็ว]',
+      manaCost: 6,
+      description: 'ยิงโจมตีระยะไกล 4 ช่องใส่ศัตรูที่อยู่ใกล้สุดได้ทันทีโดยไม่ต้องเดินเข้าประชิด',
+    },
+    passiveName: 'Keen Obsession',
+    passiveDescription: 'เพิ่ม Obsession +7 และ Vision +2 (อ้างอิงบทที่ 18)',
+    statBonus: { obsession: 7, vision: 2, defense: -1 },
+    drawbackText: 'Defense -1 (เปราะบางเมื่อถูกเข้าประชิด)',
   },
   cave_bat: {
     id: 'cave_bat',
@@ -288,6 +493,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 9,
     color: 'Blue',
     marketValue: 95,
+    synergyTag: 'arcane',
+    rumorText: 'ลือกันว่าเป็นแก่นแท้สีฟ้าของสัตว์ในถ้ำคริสตัล ช่วยให้มองเห็นในที่มืดกับปล่อยคลื่นเสียงได้มั้ง?',
     activeSkill: {
       name: 'Ultrasonic Screech',
       manaCost: 7,
@@ -295,7 +502,65 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Echolocation',
     passiveDescription: 'เพิ่ม Vision +2 และ Mana Pool +10',
-    statBonus: { vision: 2, manaPool: 10 },
+    statBonus: { vision: 2, manaPool: 10, maxHp: -10 },
+    drawbackText: 'Max HP -10 (ร่างกายบอบบางต่อแรงกระแทก)',
+  },
+  abyss_tongue: {
+    id: 'abyss_tongue',
+    name: 'แก่นแท้ [ลิ้นแห่งอเวจี]',
+    monsterName: 'Mimic / Crystal Bat (Rare)',
+    rank: 9,
+    color: 'Purple',
+    marketValue: 880,
+    synergyTag: 'shadow',
+    rumorText: 'ตำนานตลกร้ายในกิลด์! ว่ากันว่าเป็นแก่นแท้ Rank 9 ที่แพงที่สุดในประวัติศาสตร์ ทั้งที่ความสามารถไม่ได้ดีเท่าไหร่...',
+    activeSkill: {
+      name: '[เสียงกระซิบอเวจี]',
+      manaCost: 5,
+      description: 'ส่งเสียงหลอกหลอนศัตรูในระยะ 2 ช่อง (ดาเมจเบา แต่ขายในตลาดได้ราคาสูงมาก!)',
+    },
+    passiveName: 'Collector Curiosity',
+    passiveDescription: 'เพิ่ม Obsession +1 และ Vision +1 (คุณค่าทางใจและตลาดประมูลระดับตำนาน)',
+    statBonus: { obsession: 1, vision: 1, flexibility: -2 },
+    drawbackText: 'Flexibility -2 (สเตตัสไม่คุ้ม เหมาะประมูลขายมากกว่า)',
+  },
+  blade_wolf: {
+    id: 'blade_wolf',
+    name: 'แก่นแท้หมาป่าใบมีด',
+    monsterName: 'Blade Wolf',
+    rank: 8,
+    color: 'Red',
+    marketValue: 155,
+    synergyTag: 'beast',
+    rumorText: 'จากป่าชั้น 2! ได้ยินว่าช่วยให้เคลื่อนไหวคล่องตัวและฟันฉีกกระชากศัตรูได้แรงขึ้น',
+    activeSkill: {
+      name: '[ฉีกกระชาก]',
+      manaCost: 8,
+      description: 'พุ่งกรงเล็บใบมีดโจมตีศัตรูในระยะ 2 ช่องอย่างรุนแรง',
+    },
+    passiveName: 'Razor Reflex',
+    passiveDescription: 'เพิ่ม Flexibility +3 และ Strength +2',
+    statBonus: { flexibility: 3, strength: 2, defense: -2 },
+    drawbackText: 'Defense -2 (เปิดช่องว่างการป้องกัน)',
+  },
+  iron_feather: {
+    id: 'iron_feather',
+    name: 'แก่นแท้ [ขนนกเหล็ก]',
+    monsterName: 'Krungbee / Metcrow',
+    rank: 8,
+    color: 'Green',
+    marketValue: 175,
+    synergyTag: 'iron',
+    rumorText: 'แก่นแท้สีเขียวจากแมลงเกราะแข็งชั้น 2 เชื่อว่าเสริมความทนทานของเกราะและสะท้อนคมมีดได้',
+    activeSkill: {
+      name: '[ขนเหล็ก]',
+      manaCost: 8,
+      description: 'ยิงขนเหล็กใส่ศัตรูรอบตัวในระยะ 2 ช่อง พร้อมซ่อมแซมเกราะ +15%',
+    },
+    passiveName: 'Steel Plume',
+    passiveDescription: 'เพิ่ม Defense +3 และ Flexibility +2',
+    statBonus: { defense: 3, flexibility: 2, manaPool: -6 },
+    drawbackText: 'Mana Pool -6 (พลังเวทไหลเวียนช้าลง)',
   },
   corpse_golem: {
     id: 'corpse_golem',
@@ -304,17 +569,21 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 7,
     color: 'Purple',
     marketValue: 260,
+    synergyTag: 'blood',
+    rumorText: 'เพื่อนที่รอดมาบอกว่าเพิ่มพลังกายมหาศาล แต่มีผลข้างเคียงแปลก ๆ เกี่ยวกับชุดเกราะพังไวและหิวน้ำบ่อย!',
     activeSkill: {
       name: 'Flesh Burst',
       manaCost: 12,
       hpCost: 10,
       description: 'ระเบิดพลังกายภาพจากร่างกาย สร้างความเสียหายรุนแรงตาม Strength (ใช้ HP 10)',
     },
-    passiveName: 'Acid Fluid',
+    passiveName: 'Acid Fluid & Appetite',
     passiveDescription:
-      'เลือดเป็นกรด (+4 Strength, +25 Max HP) แต่ทุกครั้งที่บาดเจ็บ เกราะจะถูกกัดกร่อนหากไม่มีเกราะกันกรด!',
-    statBonus: { strength: 4, maxHp: 25 },
+      'เลือดเป็นกรด (+4 Strength, +25 Max HP) เกราะพังไวหากไม่มีชุดกันกรด และลด Thirst เร็วขึ้น',
+    statBonus: { strength: 4, maxHp: 25, flexibility: -2 },
     hasAcidFluid: true,
+    extraThirstDrain: 1,
+    drawbackText: 'เลือดกรดกัดเกราะ, หิวไว (+1 Thirst/เทิร์น), Flexibility -2',
   },
   stone_golem: {
     id: 'stone_golem',
@@ -323,6 +592,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 7,
     color: 'Gray',
     marketValue: 250,
+    synergyTag: 'iron',
+    rumorText: 'สายแทงก์เขาพูดถึงกันบ่อย น่าจะทำให้กระดูกแข็งขึ้นและซ่อมเกราะระหว่างสู้ได้',
     activeSkill: {
       name: 'Stone Armor',
       manaCost: 10,
@@ -330,7 +601,8 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Bone Density',
     passiveDescription: 'เพิ่มความหนาแน่นกระดูก (+3 Strength, +20 Max HP)',
-    statBonus: { strength: 3, maxHp: 20 },
+    statBonus: { strength: 3, maxHp: 20, flexibility: -2 },
+    drawbackText: 'Flexibility -2 (กระดูกหนัก หลบหลีกยากขึ้น)',
   },
   bone_knight: {
     id: 'bone_knight',
@@ -339,6 +611,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 7,
     color: 'Gray',
     marketValue: 280,
+    synergyTag: 'iron',
+    rumorText: 'ข่าวลือจากชั้น 3 บอกว่าคล้ายสายหินแกร่ง แต่เน้นเสริมกระดูกป้องกันและซ่อมเกราะตัวเอง',
     activeSkill: {
       name: '[เกราะกระดูก]',
       manaCost: 10,
@@ -346,7 +620,8 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Bone Frame',
     passiveDescription: 'โครงกระดูกหนาแน่นขึ้น (+3 Defense, +15 Max HP)',
-    statBonus: { defense: 3, maxHp: 15 },
+    statBonus: { defense: 3, maxHp: 15, strength: -1 },
+    drawbackText: 'Strength -1 (มวลกล้ามเนื้อและส่วนสูงหดลงตาม Lore)',
   },
   mimic: {
     id: 'mimic',
@@ -355,6 +630,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 7,
     color: 'Purple',
     marketValue: 320,
+    synergyTag: 'shadow',
+    rumorText: 'นักล่าสมบัติว่ากันว่าแก่นแท้หีบหลอกมีแพสซีฟเกี่ยวกับโชคและหินเวท แต่ไม่ชัวร์ว่าเพิ่มกี่เปอร์เซ็นต์',
     activeSkill: {
       name: 'Sixth Sense',
       manaCost: 7,
@@ -362,8 +639,28 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'ความโลภ (Greed)',
     passiveDescription: 'เพิ่มอัตรา Magic Stone ที่ได้รับ +30% และเพิ่ม Vision +3, Flexibility +2',
-    statBonus: { vision: 3, flexibility: 2 },
+    statBonus: { vision: 3, flexibility: 2, defense: -2 },
     stoneBonusPct: 30,
+    drawbackText: 'Defense -2 (ความโลภทำให้ลดการป้องกัน)',
+  },
+  gachapon: {
+    id: 'gachapon',
+    name: 'แก่นแท้ [กาชาบอน]',
+    monsterName: 'Gachapon / Auction Exclusive',
+    rank: 7,
+    color: 'Purple',
+    marketValue: 310,
+    synergyTag: 'iron',
+    rumorText: 'แก่นแท้ประหลาดที่บียอร์นเคยถือครอง เชื่อว่าเสริมความแน่นของกระดูกและมีสกิลสุ่มผลลัพธ์!',
+    activeSkill: {
+      name: '[การตอบโต้แบบสุ่ม]',
+      manaCost: 9,
+      description: 'สุ่มเกิดผล 1 ใน 3: ซ่อมเกราะ +35% / ฟื้น +28 HP / หรือฟาดศัตรูรอบตัวแรงมาก!',
+    },
+    passiveName: 'Dense Marrow',
+    passiveDescription: 'เพิ่ม Defense +3 และ Max HP +20',
+    statBonus: { defense: 3, maxHp: 20, vision: -2 },
+    drawbackText: 'Vision -2 (บดบังสายตาและผลสกิลไม่แน่นอน)',
   },
   doppelganger: {
     id: 'doppelganger',
@@ -372,6 +669,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 6,
     color: 'Purple',
     marketValue: 460,
+    synergyTag: 'shadow',
+    rumorText: 'จากป่าชั้น 4... ว่ากันว่าใช้สร้างร่างเงาหรือพรางตัวหลบศัตรูได้ชั่วคราว แต่หายากสุด ๆ',
     activeSkill: {
       name: '[การจำลองตัวเอง]',
       manaCost: 12,
@@ -379,7 +678,87 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Mirror Reflex',
     passiveDescription: 'เพิ่ม Flexibility +4 และ Vision +2',
-    statBonus: { flexibility: 4, vision: 2 },
+    statBonus: { flexibility: 4, vision: 2, maxHp: -15 },
+    drawbackText: 'Max HP -15 (จิตวิญญาณแยกส่วน ร่างกายเปราะลง)',
+  },
+  death_knight: {
+    id: 'death_knight',
+    name: 'แก่นแท้เดธไนท์ (Death Knight)',
+    monsterName: 'Death Knight',
+    rank: 6,
+    color: 'Purple',
+    marketValue: 440,
+    synergyTag: 'blood',
+    rumorText: 'ได้ยินจากชั้น 4 ว่านักรบความตายตัวนี้มอบพลังดาบมืดที่ฟันพร้อมสูบพลังชีวิตได้',
+    activeSkill: {
+      name: '[คำพิพากษาแห่งความตาย]',
+      manaCost: 12,
+      description: 'ฟาดฟันศัตรูในระยะ 2 ช่องอย่างรุนแรงและดูดฟื้นฟู +12 HP',
+    },
+    passiveName: 'Unholy Frame',
+    passiveDescription: 'เพิ่ม Strength +4, Defense +3 และ Max HP +15',
+    statBonus: { strength: 4, defense: 3, maxHp: 15, vision: -1 },
+    curseVulnBonus: 0.2,
+    drawbackText: 'Vision -1 และติดคำสาปง่ายขึ้น (+20%)',
+  },
+  orc_warlord: {
+    id: 'orc_warlord',
+    name: 'แก่นแท้ออร์ควอร์ลอร์ด',
+    monsterName: 'Orc Warrior',
+    rank: 6,
+    color: 'Red',
+    marketValue: 480,
+    synergyTag: 'beast',
+    rumorText: 'ว่ากันว่าออร์คระดับขุนศึกมีสกิล [ปลดปล่อยความป่าเถื่อน] ที่ทำให้บาร์บาเรียนคลั่งโจมตีแม่น 100%',
+    activeSkill: {
+      name: '[ปลดปล่อยความป่าเถื่อน]',
+      manaCost: 11,
+      description: 'ทุบศัตรูรอบตัวในระยะ 2 ช่อง พร้อมกระตุ้นโฟกัสโจมตีนัดถัดไป (+45%)',
+    },
+    passiveName: 'Savage Might',
+    passiveDescription: 'เพิ่ม Strength +5 และ Max HP +20',
+    statBonus: { strength: 5, maxHp: 20, defense: -2 },
+    armorWearExtra: 4,
+    drawbackText: 'Defense -2 และเกราะสึกหรอไว (+4% เมื่อถูกตี)',
+  },
+  curse_shaman: {
+    id: 'curse_shaman',
+    name: 'แก่นแท้ชาแมนคำสาป',
+    monsterName: 'Orc Shaman / Soul Eater',
+    rank: 6,
+    color: 'Purple',
+    marketValue: 430,
+    synergyTag: 'arcane',
+    rumorText: 'พวกชาแมนออร์คกับโซลอีทเตอร์ใช้คลื่นวิญญาณระยะไกล ใครอยากเป็นสายเวท-คำสาปต้องลอง',
+    activeSkill: {
+      name: '[คำสาปแห่งความเงียบ]',
+      manaCost: 11,
+      description: 'ซัดคลื่นเวทวิญญาณทะลุเกราะใส่ศัตรูในระยะ 4 ช่อง',
+    },
+    passiveName: 'Hex Affinity',
+    passiveDescription: 'เพิ่ม Mana Pool +14 และ Obsession +4',
+    statBonus: { manaPool: 14, obsession: 4, strength: -2, maxHp: -12 },
+    drawbackText: 'Strength -2, Max HP -12 (ร่างเนื้ออ่อนแอลง)',
+  },
+  doom_fire_fairy: {
+    id: 'doom_fire_fairy',
+    name: 'แก่นแท้ดูมไฟร์แฟรี่',
+    monsterName: 'Witch Lantern',
+    rank: 6,
+    color: 'Red',
+    marketValue: 490,
+    synergyTag: 'arcane',
+    rumorText: 'แก่นแท้ไฟหายากจากรอยแยกป่าแม่มด ว่ากันว่าเพิ่มทั้งมานา ความว่องไว และพลังเปลวไฟ!',
+    activeSkill: {
+      name: '[กระโดดเพลิง]',
+      manaCost: 12,
+      description: 'จุดเปลวเพลิงเผาผลาญมอนสเตอร์ทั้งหมดในระยะ 3 ช่อง',
+    },
+    passiveName: 'Ember Spirit',
+    passiveDescription: 'เพิ่ม Mana Pool +12, Flexibility +3 และ Vision +2',
+    statBonus: { manaPool: 12, flexibility: 3, vision: 2, defense: -2 },
+    rangedVulnPct: 15,
+    drawbackText: 'Defense -2 และรับดาเมจระยะไกล/เวทแรงขึ้น +15%',
   },
   vampire: {
     id: 'vampire',
@@ -388,6 +767,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 5,
     color: 'Red',
     marketValue: 650,
+    synergyTag: 'blood',
+    rumorText: 'ตำนานรอยแยกแวมไพร์! ลือกันว่ามีพลังฟื้นฟูเลือดอมตะติดตัว แต่ต้องระวังแสงหรือคำสาปไม่แน่ชัด',
     activeSkill: {
       name: 'Blood Drain',
       manaCost: 11,
@@ -395,8 +776,32 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Immortal Regeneration',
     passiveDescription: 'ฟื้นฟูพลังชีวิตตามธรรมชาติ +5 HP ทุกเทิร์น และ +20 Max HP',
-    statBonus: { maxHp: 20, flexibility: 2 },
+    statBonus: { maxHp: 20, flexibility: 2, strength: -2 },
     autoRegenHp: 5,
+    rangedVulnPct: 20,
+    drawbackText: 'Strength -2 และแพ้การโจมตีระยะไกล/เวท (+20% dmg)',
+  },
+  troll_regen: {
+    id: 'troll_regen',
+    name: 'แก่นแท้โทรลล์ (ฟื้นฟูอมตะ)',
+    monsterName: 'Troll / Half-Troll',
+    rank: 5,
+    color: 'Green',
+    marketValue: 680,
+    synergyTag: 'blood',
+    rumorText: 'เคยได้ยินเรื่องแก่นแท้ฟื้นฟูขั้นสุดยอดไหม? ฟื้นเลือดทุกเทิร์นมหาศาล แต่ร่างกายจะต่อต้านโพชั่นรักษาทั้งหมด!',
+    activeSkill: {
+      name: '[เนื้อหนังเบ่งบาน]',
+      manaCost: 12,
+      description: 'เร่งการงอกใหม่ของเนื้อเยื่อ ฟื้นฟู HP +30 ทันที',
+    },
+    passiveName: 'Hyper Regeneration (ต่อต้านโพชั่น)',
+    passiveDescription: 'ฟื้นฟู +9 HP/เทิร์น และ +35 Max HP',
+    statBonus: { maxHp: 35, flexibility: -2 },
+    autoRegenHp: 9,
+    noPotionHeal: true,
+    extraThirstDrain: 1,
+    drawbackText: 'Healing Potion ไม่เกิดผล, หิวไว (+1 Thirst/เทิร์น), Flexibility -2',
   },
   orc_hero: {
     id: 'orc_hero',
@@ -405,6 +810,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 5,
     color: 'Red',
     marketValue: 720,
+    synergyTag: 'beast',
+    rumorText: 'บาร์บาเรียนทุกคนฝันถึงแก่นแท้บอสชั้น 3 ตัวนี้ เชื่อว่าเพิ่มพละกำลังระดับสัตว์ประหลาด!',
     activeSkill: {
       name: '[เส้นทางวีรบุรุษ]',
       manaCost: 14,
@@ -412,7 +819,9 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Heroic Physique',
     passiveDescription: 'เพิ่มพละกำลังก้าวกระโดด (+6 Strength, +35 Max HP)',
-    statBonus: { strength: 6, maxHp: 35 },
+    statBonus: { strength: 6, maxHp: 35, manaPool: -8 },
+    extraThirstDrain: 1,
+    drawbackText: 'Mana Pool -8 และเผาผลาญพลังงานไว (+1 Thirst/เทิร์น)',
   },
   flameless_spirit: {
     id: 'flameless_spirit',
@@ -421,6 +830,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 5,
     color: 'Blue',
     marketValue: 850,
+    synergyTag: 'arcane',
+    rumorText: 'ลือกันว่าบอสชั้น 5 ให้แก่นแท้สีฟ้าสายพลังวิญญาณบริสุทธิ์ เพิ่มมานาเยอะมากแต่รายละเอียดยังคลุมเครือ',
     activeSkill: {
       name: '[จิตวิญญาณไร้เปลวเพลิง]',
       manaCost: 14,
@@ -428,7 +839,48 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Spirit Resonance',
     passiveDescription: 'ขยายพลังวิญญาณ (+18 Mana Pool, +4 Obsession, +2 Vision)',
-    statBonus: { manaPool: 18, obsession: 4, vision: 2 },
+    statBonus: { manaPool: 18, obsession: 4, vision: 2, maxHp: -20 },
+    drawbackText: 'Max HP -20 (เชื่อมจิตวิญญาณจนร่างเนื้อเปราะลง)',
+  },
+  ice_lord: {
+    id: 'ice_lord',
+    name: 'แก่นแท้เจ้าแห่งน้ำแข็ง',
+    monsterName: 'Lanemut Shaman / Lycanthrope',
+    rank: 5,
+    color: 'Blue',
+    marketValue: 790,
+    synergyTag: 'arcane',
+    rumorText: 'ว่ากันว่าผู้ถือครองสามารถเรียก [พายุหิมะ] แช่แข็งศัตรูรอบตัวพร้อมเสริมเกราะวิญญาณได้',
+    activeSkill: {
+      name: '[พายุหิมะ]',
+      manaCost: 13,
+      description: 'พัดพายุเยือกแข็งใส่มอนสเตอร์ระยะ 3 ช่อง และลด Flexibility ศัตรู',
+    },
+    passiveName: 'Permafrost Mantle',
+    passiveDescription: 'เพิ่ม Defense +4, Mana Pool +15 และ Max HP +20',
+    statBonus: { defense: 4, manaPool: 15, maxHp: 20, flexibility: -3 },
+    drawbackText: 'Flexibility -3 (ไอเย็นหน่วงความคล่องตัว)',
+  },
+  ifrit: {
+    id: 'ifrit',
+    name: 'แก่นแท้อิฟริท (Ifrit)',
+    monsterName: 'Drake / Auction Exclusive',
+    rank: 5,
+    color: 'Red',
+    marketValue: 980,
+    synergyTag: 'arcane',
+    rumorText: 'ข่าวตลาดกลางบอกว่าแก่นแท้อิฟริทราคาพุ่งสูงหลายล้านสโตน พลัง [นรกอัคคี] เผาผลาญทั้งห้อง!',
+    activeSkill: {
+      name: '[นรกอัคคี]',
+      manaCost: 14,
+      description: 'เรียกทะเลเพลิงเผาผลาญศัตรูทั้งหมดในระยะ 3 ช่องอย่างรุนแรง',
+    },
+    passiveName: 'Infernal Core',
+    passiveDescription: 'เพิ่ม Strength +5 และ Mana Pool +16',
+    statBonus: { strength: 5, manaPool: 16, defense: -2 },
+    extraThirstDrain: 1,
+    armorWearExtra: 4,
+    drawbackText: 'Defense -2, เกราะสึกไว (+4%) และกระหายน้ำไว (+1 Thirst/เทิร์น)',
   },
   grabnich: {
     id: 'grabnich',
@@ -437,6 +889,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 4,
     color: 'Blue',
     marketValue: 1100,
+    synergyTag: 'beast',
+    rumorText: 'กะลาสีเรือชั้น 6 เล่าว่าสัตว์อสูรแห่งห้วงลึกตัวนี้มอบพละกำลังและความอึดระดับแนวหน้า',
     activeSkill: {
       name: '[พลังแห่งห้วงลึก]',
       manaCost: 15,
@@ -444,23 +898,8 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Abyssal Tide',
     passiveDescription: 'เพิ่ม Strength +5, Defense +3 และ Max HP +30',
-    statBonus: { strength: 5, defense: 3, maxHp: 30 },
-  },
-  stormgush: {
-    id: 'stormgush',
-    name: 'Stormgush Essence',
-    monsterName: 'Deep Sea Giant',
-    rank: 3,
-    color: 'Blue',
-    marketValue: 1450,
-    activeSkill: {
-      name: 'Tempest Guard',
-      manaCost: 14,
-      description: 'พายุคลั่งซัดศัตรูรอบตัวและฟื้นฟู HP +25',
-    },
-    passiveName: 'Lung of the Storm',
-    passiveDescription: 'ต้านทานสูง (+4 Defense, +25 Max HP, +12 Mana Pool)',
-    statBonus: { defense: 4, maxHp: 25, manaPool: 12 },
+    statBonus: { strength: 5, defense: 3, maxHp: 30, flexibility: -3, vision: -1 },
+    drawbackText: 'Flexibility -3, Vision -1 (แรงกดดันห้วงลึกทำให้ช้าลง)',
   },
   manticore: {
     id: 'manticore',
@@ -469,6 +908,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 4,
     color: 'Red',
     marketValue: 1050,
+    synergyTag: 'beast',
+    rumorText: 'อสูรมีพิษจากทวีปมืด... ว่ากันว่าทำให้คล่องแคล่วและผิวหนังหนาขึ้น พร้อมท่าพุ่งพิษ',
     activeSkill: {
       name: 'Venom Pounce',
       manaCost: 12,
@@ -476,7 +917,88 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: 'Arcane Hide',
     passiveDescription: 'เพิ่ม Flexibility +4 และ Defense +4',
-    statBonus: { flexibility: 4, defense: 4 },
+    statBonus: { flexibility: 4, defense: 4, manaPool: -10 },
+    curseVulnBonus: 0.2,
+    drawbackText: 'Mana Pool -10 และติดคำสาปง่ายขึ้น (+20%)',
+  },
+  vol_herchan: {
+    id: 'vol_herchan',
+    name: 'แก่นแท้ [วอล-เฮอร์ชาน]',
+    monsterName: 'Lanemut Warrior / Auction Exclusive',
+    rank: 4,
+    color: 'Blue',
+    marketValue: 1250,
+    synergyTag: 'iron',
+    rumorText: 'แก่นแท้สายโล่ในฝัน! ลือกันว่าบียอร์นยอมเอาบ้านเออร์เวนไปจำนองเพื่อประมูลมาใช้ป้องกันออร่า!',
+    activeSkill: {
+      name: '[กำแพงทองพันชั้น]',
+      manaCost: 13,
+      description: 'ตั้งม่านป้องกันสมบูรณ์แบบ ฟื้นเกราะ +45%, HP +25 และกระแทกศัตรูใกล้เคียง',
+    },
+    passiveName: 'Aura Barrier',
+    passiveDescription: 'เพิ่ม Defense +7 และ Max HP +40',
+    statBonus: { defense: 7, maxHp: 40, flexibility: -3, strength: -1 },
+    drawbackText: 'Flexibility -3, Strength -1 (เน้นตั้งรับเต็มรูปแบบ)',
+  },
+  twin_hydra: {
+    id: 'twin_hydra',
+    name: 'แก่นแท้ [ไฮดราคู่]',
+    monsterName: 'Deep Ocean Rift / Auction Exclusive',
+    rank: 4,
+    color: 'Green',
+    marketValue: 1180,
+    synergyTag: 'beast',
+    rumorText: 'ลือกันว่าให้สกิล [การควบคุมคู่] ช่วยโจมตีซ้ำสองจังหวะในพริบตาเดียว!',
+    activeSkill: {
+      name: '[ฟันซ้ำ]',
+      manaCost: 13,
+      description: 'ฟาดฟันต่อเนื่อง 2 จังหวะใส่ศัตรูทั้งหมดในระยะ 2 ช่อง',
+    },
+    passiveName: 'Twin Control',
+    passiveDescription: 'เพิ่ม Strength +5, Flexibility +5 และ Max HP +25',
+    statBonus: { strength: 5, flexibility: 5, maxHp: 25, defense: -3 },
+    extraThirstDrain: 1,
+    drawbackText: 'Defense -3 และกินพลังงานสูง (+1 Thirst/เทิร์น)',
+  },
+  beorn: {
+    id: 'beorn',
+    name: 'แก่นแท้ [บียอร์น (Beorn)]',
+    monsterName: 'Royal Treasure / Auction Exclusive',
+    rank: 4,
+    color: 'Red',
+    marketValue: 1220,
+    synergyTag: 'iron',
+    rumorText: 'แก่นแท้หายากระดับรางวัลราชวงศ์! ว่ากันว่ามอบความต้านทานความเจ็บปวดระดับ 30 ทำให้ยืนหยัดไม่ล้ม',
+    activeSkill: {
+      name: '[ไม่ย่อท้อ]',
+      manaCost: 11,
+      description: 'ปลุกจิตใจเหล็กกล้า ฟื้น HP +35 และรักษาอาการเลือดไหลทันที',
+    },
+    passiveName: 'Pain Resistance 30',
+    passiveDescription: 'เพิ่ม Defense +6, Max HP +45 และ Strength +4',
+    statBonus: { defense: 6, maxHp: 45, strength: 4, vision: -2 },
+    rangedVulnPct: 15,
+    drawbackText: 'Vision -2 และไม่รู้สึกเจ็บจนรับดาเมจไกลแรงขึ้น +15%',
+  },
+  stormgush: {
+    id: 'stormgush',
+    name: 'Stormgush Essence',
+    monsterName: 'Deep Sea Giant',
+    rank: 3,
+    color: 'Blue',
+    marketValue: 1450,
+    synergyTag: 'iron',
+    rumorText: 'ข่าวลือระดับ 3 จากทะเลลึก! ว่ากันว่ามีสกิลเรียกพายุพร้อมฮีลตัวเองได้ด้วย แต่แทบไม่มีใครเคยเห็นของจริง',
+    activeSkill: {
+      name: 'Tempest Guard',
+      manaCost: 14,
+      description: 'พายุคลั่งซัดศัตรูรอบตัวและฟื้นฟู HP +25',
+    },
+    passiveName: 'Lung of the Storm',
+    passiveDescription: 'ต้านทานสูง (+4 Defense, +25 Max HP, +12 Mana Pool)',
+    statBonus: { defense: 4, maxHp: 25, manaPool: 12, flexibility: -2 },
+    extraManaCost: 2,
+    drawbackText: 'Flexibility -2 และสกิลแก่นแท้ใช้มานาเพิ่ม +2 MP',
   },
   ogre: {
     id: 'ogre',
@@ -485,6 +1007,8 @@ export const ESSENCES: Record<string, Essence> = {
     rank: 3,
     color: 'Red',
     marketValue: 1650,
+    synergyTag: 'iron',
+    rumorText: 'แก่นแท้ระดับ 3 ในตำนานที่ตระกูลใหญ่แย่งชิงกัน เชื่อว่ามีสกิล [ผิวหนังเหล็กกล้า] ทำให้แทบอมตะ!',
     activeSkill: {
       name: 'Ogre Smash',
       manaCost: 16,
@@ -492,9 +1016,205 @@ export const ESSENCES: Record<string, Essence> = {
     },
     passiveName: '[ผิวหนังเหล็กกล้า]',
     passiveDescription: 'เพิ่ม Strength +8, Defense +5, Max HP +50',
-    statBonus: { strength: 8, defense: 5, maxHp: 50 },
+    statBonus: { strength: 8, defense: 5, maxHp: 50, flexibility: -4, manaPool: -10 },
+    extraThirstDrain: 1,
+    drawbackText: 'Flexibility -4, Mana Pool -10 และหิวไว (+1 Thirst/เทิร์น)',
+  },
+  chaos_riakis: {
+    id: 'chaos_riakis',
+    name: 'แก่นแท้ [ลอร์ดแห่งความโกลาหล เรียคิส]',
+    monsterName: 'Dikol King (Floor 7 Lord)',
+    rank: 2,
+    color: 'Red',
+    marketValue: 2200,
+    synergyTag: 'blood',
+    rumorText: 'แก่นแท้ระดับฟลอร์ลอร์ด! มูลค่าหลายพันล้านสโตน แต่เตือนไว้ว่าพลังคลุ้มคลั่งจะลดเกราะและดูดพลังงาน!',
+    activeSkill: {
+      name: '[หายนะ]',
+      manaCost: 18,
+      description: 'ปลดปล่อยคลื่นทำลายล้างแห่งความโกลาหลใส่ทุกเป้าหมายในระยะ 3 ช่อง!',
+    },
+    passiveName: 'Chaos Berserk',
+    passiveDescription: 'เพิ่ม Strength +11, Max HP +60 และ Mana Pool +20',
+    statBonus: { strength: 11, maxHp: 60, manaPool: 20, defense: -4 },
+    extraThirstDrain: 2,
+    armorWearExtra: 6,
+    rangedVulnPct: 20,
+    drawbackText: 'Defense -4, หิวจัด (+2 Thirst/เทิร์น), เกราะพังไว (+6%) และรับดาเมจไกล +20%',
+  },
+  yeti: {
+    id: 'yeti',
+    name: 'Yeti Essence (สีฟ้า)',
+    monsterName: 'Yeti',
+    rank: 7,
+    color: 'Blue',
+    marketValue: 340,
+    synergyTag: 'arcane',
+    rumorText: 'ว่ากันว่าพบในรอยแยกถ้ำน้ำแข็ง เสริมทั้งความถึกและพลังเยือกแข็งระดับกลาง',
+    activeSkill: {
+      name: '[การควบแน่นความเย็น]',
+      manaCost: 11,
+      description: 'ปลดปล่อยความเย็นแช่แข็งศัตรูในระยะ 2 ช่อง',
+    },
+    passiveName: 'Frost Endurance',
+    passiveDescription: 'เพิ่ม Defense +3, Max HP +20 และ Mana Pool +8',
+    statBonus: { defense: 3, maxHp: 20, manaPool: 8, flexibility: -2 },
+    drawbackText: 'Flexibility -2 (ความเย็นทำให้เคลื่อนไหวช้าลง)',
+  },
+  cannibalo: {
+    id: 'cannibalo',
+    name: 'Cannibalo Essence',
+    monsterName: 'Cannibalo',
+    rank: 7,
+    color: 'Red',
+    marketValue: 380,
+    synergyTag: 'blood',
+    rumorText: 'นักล่ามรณะ Rank 7 ที่ออกมาล่าคนแช่ชั้น! ได้ยินว่าแก่นแท้ของมันดูดเลือดศัตรูได้เหมือนแวมไพร์ย่อม ๆ',
+    activeSkill: {
+      name: 'Devour Strike',
+      manaCost: 12,
+      description: 'ฉีกกระชากศัตรูใกล้เคียงและดูดกลืนพลังชีวิต +18 HP',
+    },
+    passiveName: 'Stalker Blood',
+    passiveDescription: 'เพิ่ม Strength +5 และ Max HP +20',
+    statBonus: { strength: 5, maxHp: 20, obsession: -2 },
+    extraThirstDrain: 1,
+    drawbackText: 'กระหายเลือด (+1 Thirst/เทิร์น) และ Obsession -2',
   },
 };
+
+export interface SynergyBonusInfo {
+  tag: EssenceSynergyTag;
+  name: string;
+  bonusText: string;
+  color: string;
+}
+
+export const SYNERGY_BONUSES: Record<EssenceSynergyTag, SynergyBonusInfo> = {
+  iron: {
+    tag: 'iron',
+    name: 'สายโล่เหล็กกล้า (Iron)',
+    bonusText: 'Defense +4, Max HP +25',
+    color: '#93c5fd',
+  },
+  shadow: {
+    tag: 'shadow',
+    name: 'สายเงา & สัมผัสที่หก (Shadow)',
+    bonusText: 'Vision +3, Flexibility +4, Crit +12%',
+    color: '#c4b5fd',
+  },
+  blood: {
+    tag: 'blood',
+    name: 'สายโลหิตอมตะ (Blood)',
+    bonusText: 'Auto-Regen +4 HP/เทิร์น, Strength +4',
+    color: '#fda4af',
+  },
+  arcane: {
+    tag: 'arcane',
+    name: 'สายวิญญาณ & ธาตุ (Arcane)',
+    bonusText: 'Mana Pool +20, Obsession +4',
+    color: '#67e8f9',
+  },
+  beast: {
+    tag: 'beast',
+    name: 'สายสัญชาตญาณอสูร (Beast)',
+    bonusText: 'Strength +5, Flexibility +3',
+    color: '#fcd34d',
+  },
+};
+
+export function generateAuctionListings(day: number): AuctionListing[] {
+  const pool = [
+    'vol_herchan',
+    'ifrit',
+    'twin_hydra',
+    'beorn',
+    'gachapon',
+    'abyss_tongue',
+    'ice_lord',
+    'troll_regen',
+    'orc_warlord',
+    'doom_fire_fairy',
+    'vampire',
+    'manticore',
+    'stormgush',
+    'chaos_riakis',
+  ];
+  const shuffled = [...pool];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, 3).map((essenceId, idx) => {
+    const ess = ESSENCES[essenceId];
+    return {
+      id: `auc_${day}_${idx}_${essenceId}`,
+      essenceId,
+      price: Math.round((ess.marketValue * 1.15) / 10) * 10,
+      sold: false,
+    };
+  });
+}
+
+export interface EssenceBookDefinition {
+  tier: EssenceBookTier;
+  title: string;
+  price: number;
+  description: string;
+  essenceIds: string[];
+}
+
+export const ESSENCE_BOOKS: EssenceBookDefinition[] = [
+  {
+    tier: 'rank9',
+    title: 'สารานุกรมแก่นแท้ระดับต้น (Rank 8–9)',
+    price: 75,
+    description: 'บันทึกยืนยันของกิลด์สำหรับแก่นแท้ชั้น 1–2 (Gnome, Goblin, Bat, Archer, Blade Wolf, ขนนกเหล็ก, ลิ้นแห่งอเวจี)',
+    essenceIds: ['gnome', 'goblin_swordsman', 'goblin_archer', 'cave_bat', 'abyss_tongue', 'blade_wolf', 'iron_feather'],
+  },
+  {
+    tier: 'mid',
+    title: 'ตำราแก่นแท้ระดับกลาง (Rank 6–7)',
+    price: 170,
+    description: 'ข้อมูลยืนยันแก่นแท้สายกลาง & รอยแยก (Golem, Bone Knight, Mimic, Gachapon, Death Knight, Warlord, Shaman, Fire Fairy, Yeti, Cannibalo)',
+    essenceIds: [
+      'corpse_golem',
+      'stone_golem',
+      'bone_knight',
+      'mimic',
+      'gachapon',
+      'doppelganger',
+      'death_knight',
+      'orc_warlord',
+      'curse_shaman',
+      'doom_fire_fairy',
+      'yeti',
+      'cannibalo',
+    ],
+  },
+  {
+    tier: 'high',
+    title: 'ข้อมูลลับแก่นแท้ระดับสูง (Rank 2–5)',
+    price: 360,
+    description: 'บันทึกหวงห้ามระดับสูง (Vampire, Troll, Orc Hero, Flameless Spirit, Ice Lord, Ifrit, Grabnich, Manticore, Vol-Herchan, Twin Hydra, Beorn, Stormgush, Ogre, Riakis)',
+    essenceIds: [
+      'vampire',
+      'troll_regen',
+      'orc_hero',
+      'flameless_spirit',
+      'ice_lord',
+      'ifrit',
+      'grabnich',
+      'manticore',
+      'vol_herchan',
+      'twin_hydra',
+      'beorn',
+      'stormgush',
+      'ogre',
+      'chaos_riakis',
+    ],
+  },
+];
 
 export const ITEMS: Record<string, Item> = {
   wooden_club: {
@@ -580,6 +1300,45 @@ export const ITEMS: Record<string, Item> = {
     basePrice: 200,
     weightCapacityBonus: 18,
     description: 'เพิ่มขีดจำกัดน้ำหนักที่แบกได้ทันที +18 kg',
+  },
+  number_35_claw: {
+    id: 'number_35_claw',
+    name: 'กรงเล็บอเวจีหมายเลข 35',
+    type: 'number_item',
+    weight: 3,
+    basePrice: 480,
+    attackBonus: 12,
+    critBonusPct: 18,
+    description: 'ไอเทมตัวเลขสุดโหด เพิ่ม Attack +12 และโอกาสคริติคอล +18%',
+  },
+  number_77_amulet: {
+    id: 'number_77_amulet',
+    name: 'เครื่องรางฟื้นฟูหมายเลข 77',
+    type: 'number_item',
+    weight: 1,
+    basePrice: 420,
+    defenseBonus: 3,
+    regenHpBonus: 4,
+    description: 'ไอเทมตัวเลขฟื้นฟูร่างกาย +4 HP/เทิร์น และ Defense +3',
+  },
+  number_12_cloak: {
+    id: 'number_12_cloak',
+    name: 'ผ้าคลุมเงาหมายเลข 12',
+    type: 'number_item',
+    weight: 2,
+    basePrice: 390,
+    flexBonus: 5,
+    visionBonus: 3,
+    description: 'ไอเทมตัวเลขเพิ่ม Flexibility +5 และ Vision +3',
+  },
+  memory_potion: {
+    id: 'memory_potion',
+    name: 'ยาลบความจำโนอาร์ค',
+    type: 'utility',
+    weight: 0.5,
+    basePrice: 120,
+    reduceSuspicion: 40,
+    description: 'ผลิตภัณฑ์ลับของนักแปรธาตุโนอาร์ค ลดค่าความสงสัยวิญญาณร้าย -40',
   },
   ration_meal: {
     id: 'ration_meal',
@@ -699,8 +1458,8 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 3,
     magicStoneMin: 2,
     magicStoneMax: 3,
-    essenceDropChance: 0.3,
-    essenceId: 'goblin_swordsman',
+    essenceDropChance: 0.32,
+    essenceId: 'goblin_archer',
     rangedRange: 4,
     inflictsBleed: true,
     symbol: 'a',
@@ -754,8 +1513,8 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 4,
     magicStoneMin: 3,
     magicStoneMax: 5,
-    essenceDropChance: 0.2,
-    essenceId: null,
+    essenceDropChance: 0.3,
+    essenceId: 'blade_wolf',
     inflictsBleed: true,
     symbol: 'w',
     description: 'เขี้ยวคมกริบทำให้เกิดบาดแผลเลือดไหล',
@@ -771,10 +1530,10 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 4,
     magicStoneMin: 3,
     magicStoneMax: 6,
-    essenceDropChance: 0.2,
-    essenceId: null,
+    essenceDropChance: 0.3,
+    essenceId: 'iron_feather',
     symbol: 'K',
-    description: 'มอนสเตอร์แมลงระดับ 8 เปลือกแข็ง',
+    description: 'มอนสเตอร์แมลงระดับ 8 เปลือกแข็ง ดรอปแก่นแท้ [ขนนกเหล็ก]',
   },
   alpha_blade_wolf: {
     id: 'alpha_blade_wolf',
@@ -787,8 +1546,8 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 12,
     magicStoneMin: 10,
     magicStoneMax: 15,
-    essenceDropChance: 0.4,
-    essenceId: null,
+    essenceDropChance: 0.55,
+    essenceId: 'blade_wolf',
     inflictsBleed: true,
     enragesAtHalf: true,
     isBoss: true,
@@ -870,10 +1629,10 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 6,
     magicStoneMin: 6,
     magicStoneMax: 9,
-    essenceDropChance: 0.25,
-    essenceId: null,
+    essenceDropChance: 0.35,
+    essenceId: 'orc_warlord',
     symbol: 'O',
-    description: 'นักรบออร์คแห่งชั้น 3',
+    description: 'นักรบออร์คแห่งชั้น 3 ดรอปแก่นแท้ออร์ควอร์ลอร์ด',
   },
   orc_shaman: {
     id: 'orc_shaman',
@@ -886,12 +1645,12 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 6,
     magicStoneMin: 6,
     magicStoneMax: 10,
-    essenceDropChance: 0.25,
-    essenceId: null,
+    essenceDropChance: 0.35,
+    essenceId: 'curse_shaman',
     rangedRange: 5,
     inflictsCurse: true,
     symbol: 's',
-    description: 'ยิงคำสาประยะ 5 ช่อง!',
+    description: 'ยิงคำสาประยะ 5 ช่อง ดรอปแก่นแท้ชาแมนคำสาป!',
   },
   orc_hero: {
     id: 'orc_hero',
@@ -940,8 +1699,8 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 8,
     magicStoneMin: 8,
     magicStoneMax: 12,
-    essenceDropChance: 0.35,
-    essenceId: 'bone_knight',
+    essenceDropChance: 0.4,
+    essenceId: 'death_knight',
     inflictsCurse: true,
     symbol: 'k',
     description: 'อัศวินมรณะระดับ 6 บนชั้น 4',
@@ -992,8 +1751,8 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 10,
     magicStoneMin: 9,
     magicStoneMax: 14,
-    essenceDropChance: 0.2,
-    essenceId: null,
+    essenceDropChance: 0.35,
+    essenceId: 'curse_shaman',
     rangedRange: 4,
     inflictsCurse: true,
     symbol: 'E',
@@ -1010,11 +1769,11 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 10,
     magicStoneMin: 10,
     magicStoneMax: 15,
-    essenceDropChance: 0.25,
-    essenceId: null,
+    essenceDropChance: 0.45,
+    essenceId: 'ifrit',
     inflictsBleed: true,
     symbol: 'R',
-    description: 'มังกรดินระดับ 5 บนชั้น 5',
+    description: 'มังกรไฟระดับ 5 บนชั้น 5 ดรอปแก่นแท้อิฟริท!',
   },
   troll: {
     id: 'troll',
@@ -1027,10 +1786,10 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 10,
     magicStoneMin: 9,
     magicStoneMax: 14,
-    essenceDropChance: 0.2,
-    essenceId: null,
+    essenceDropChance: 0.4,
+    essenceId: 'troll_regen',
     symbol: 'T',
-    description: 'อสูรพลังฟื้นตัวสูงระดับ 5',
+    description: 'อสูรพลังฟื้นตัวสูงระดับ 5 ดรอปแก่นแท้โทรลล์ (ฟื้นฟูอมตะ)',
   },
   flameless_spirit: {
     id: 'flameless_spirit',
@@ -1063,11 +1822,11 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 12,
     magicStoneMin: 12,
     magicStoneMax: 18,
-    essenceDropChance: 0.25,
-    essenceId: null,
+    essenceDropChance: 0.38,
+    essenceId: 'vol_herchan',
     inflictsBleed: true,
     symbol: 'L',
-    description: 'มอนสเตอร์ทะเลแห่งมหาสมุทรใหญ่ชั้น 6',
+    description: 'มอนสเตอร์ทะเลแห่งมหาสมุทรใหญ่ชั้น 6 ดรอปแก่นแท้สายโล่ [วอล-เฮอร์ชาน]',
   },
   lanemut_shaman: {
     id: 'lanemut_shaman',
@@ -1080,12 +1839,12 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 12,
     magicStoneMin: 12,
     magicStoneMax: 18,
-    essenceDropChance: 0.25,
-    essenceId: null,
+    essenceDropChance: 0.38,
+    essenceId: 'ice_lord',
     rangedRange: 5,
     inflictsBlind: true,
     symbol: 'l',
-    description: 'ชาแมนทะเลโจมตีระยะไกลและบดบังทัศนวิสัย',
+    description: 'ชาแมนทะเลโจมตีระยะไกล ดรอปแก่นแท้เจ้าแห่งน้ำแข็ง',
   },
   deep_sea_giant: {
     id: 'deep_sea_giant',
@@ -1132,8 +1891,8 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 16,
     magicStoneMin: 16,
     magicStoneMax: 22,
-    essenceDropChance: 0.25,
-    essenceId: null,
+    essenceDropChance: 0.35,
+    essenceId: 'iron_feather',
     inflictsBlind: true,
     symbol: 'c',
     description: 'อสูรแห่งหมอกสีดำชั้น 7',
@@ -1199,14 +1958,119 @@ export const MONSTERS: Record<string, MonsterTemplate> = {
     expReward: 40,
     magicStoneMin: 40,
     magicStoneMax: 60,
-    essenceDropChance: 0,
-    essenceId: null,
+    essenceDropChance: 0.9,
+    essenceId: 'chaos_riakis',
     rangedRange: 4,
     inflictsCurse: true,
     inflictsBleed: true,
     enragesAtHalf: true,
     isBoss: true,
     symbol: 'X',
-    description: 'ราชาวิญญาณมืดผู้ครองซากปรักหักพังแพนเทเลียน ชั้น 7!',
+    description: 'ราชาวิญญาณมืดผู้ครองซากปรักหักพังแพนเทเลียน ชั้น 7 (ดรอปแก่นแท้ลอร์ดแห่งความโกลาหล)!',
+  },
+  frost_wolf: {
+    id: 'frost_wolf',
+    name: 'ฟรอสต์วูล์ฟ (Frost Wolf)',
+    rank: 9,
+    maxHp: 46,
+    attack: 14,
+    defense: 3,
+    flexibility: 7,
+    expReward: 4,
+    magicStoneMin: 2,
+    magicStoneMax: 4,
+    essenceDropChance: 0.25,
+    essenceId: null,
+    inflictsBleed: true,
+    symbol: 'f',
+    description: 'หมาป่าน้ำแข็งในรอยแยกถ้ำธารน้ำแข็ง',
+  },
+  yeti: {
+    id: 'yeti',
+    name: 'เยติ (Yeti)',
+    rank: 7,
+    maxHp: 115,
+    attack: 19,
+    defense: 8,
+    flexibility: 4,
+    expReward: 6,
+    magicStoneMin: 5,
+    magicStoneMax: 9,
+    essenceDropChance: 0.65,
+    essenceId: 'yeti',
+    symbol: 'Y',
+    description: 'อสูรน้ำแข็งแห่งถ้ำธารน้ำแข็ง ดรอปแก่นแท้สีฟ้า',
+  },
+  lycanthrope_guardian: {
+    id: 'lycanthrope_guardian',
+    name: 'ไลแคนโทรป (ผู้พิทักษ์ถ้ำธารน้ำแข็ง)',
+    rank: 7,
+    maxHp: 190,
+    attack: 24,
+    defense: 8,
+    flexibility: 8,
+    expReward: 12,
+    magicStoneMin: 12,
+    magicStoneMax: 18,
+    essenceDropChance: 0.75,
+    essenceId: 'ice_lord',
+    inflictsBleed: true,
+    enragesAtHalf: true,
+    isBoss: true,
+    symbol: 'L',
+    description: 'ผู้พิทักษ์รอยแยกถ้ำธารน้ำแข็ง (Rank 7)',
+  },
+  witch_lantern: {
+    id: 'witch_lantern',
+    name: 'โคมไฟแม่มด (Witch Lantern)',
+    rank: 9,
+    maxHp: 58,
+    attack: 17,
+    defense: 4,
+    flexibility: 7,
+    expReward: 5,
+    magicStoneMin: 4,
+    magicStoneMax: 6,
+    essenceDropChance: 0.35,
+    essenceId: 'doom_fire_fairy',
+    rangedRange: 4,
+    inflictsBlind: true,
+    symbol: 'i',
+    description: 'มอนสเตอร์ไร้รูปร่างในป่าแม่มด ดรอปแก่นแท้ดูมไฟร์แฟรี่',
+  },
+  half_troll: {
+    id: 'half_troll',
+    name: 'ฮาล์ฟโทรลล์ (Half-Troll)',
+    rank: 7,
+    maxHp: 135,
+    attack: 22,
+    defense: 7,
+    flexibility: 4,
+    expReward: 7,
+    magicStoneMin: 6,
+    magicStoneMax: 10,
+    essenceDropChance: 0.4,
+    essenceId: 'troll_regen',
+    symbol: 'h',
+    description: 'อสูรกายร่างยักษ์ในป่าแม่มด ดรอปแก่นแท้โทรลล์ (ฟื้นฟูอมตะ)',
+  },
+  cannibalo: {
+    id: 'cannibalo',
+    name: 'แคนนิบาโล (Cannibalo)',
+    rank: 7,
+    maxHp: 195,
+    attack: 26,
+    defense: 9,
+    flexibility: 7,
+    expReward: 12,
+    magicStoneMin: 10,
+    magicStoneMax: 16,
+    essenceDropChance: 0.8,
+    essenceId: 'cannibalo',
+    inflictsBleed: true,
+    enragesAtHalf: true,
+    isBoss: true,
+    symbol: 'Q',
+    description: 'นักล่า Rank 7 ที่จะปรากฏตัวเมื่อนักสำรวจแช่อยู่ที่เดิมนานเกินไป!',
   },
 };

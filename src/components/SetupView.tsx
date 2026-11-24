@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { BookOpen, Sparkles, Swords, User } from 'lucide-react';
+import {
+  BookOpen,
+  Coins,
+  Compass,
+  Flame,
+  ShieldAlert,
+  Sparkles,
+  Swords,
+  User,
+} from 'lucide-react';
 import { RACES } from '../data/loreData';
 import { GameMode, RaceId } from '../types/game';
 
@@ -26,125 +35,126 @@ export function SetupView({ onStartGame }: SetupViewProps) {
 
   return (
     <div className="setup-grid">
-      <div className="setup-pane" style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
-        <div className="card">
-          <h2>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              <BookOpen size={17} /> เลือกโหมดการผจญภัย
-            </span>
-          </h2>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 10,
-            }}
-          >
-            <button
-              type="button"
-              className="shop-item"
-              onClick={() => setMode('story')}
-              style={{
-                textAlign: 'left',
-                cursor: 'pointer',
-                borderColor: mode === 'story' ? '#f59e0b' : '#263147',
-                background: mode === 'story' ? 'rgba(217, 119, 6, 0.14)' : '#161d2c',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700, color: '#fbbf24', fontSize: '0.95rem' }}>
-                  โหมดเนื้อเรื่อง (Story Mode)
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: 4 }}>
-                  รับบทเป็น <strong>Bjorn Yandel</strong> เผ่าคนเถื่อน (Barbarian)
-                  ตามเส้นเรื่องหลักของ Dungeon &amp; Stone
-                </div>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              className="shop-item"
-              onClick={() => setMode('custom')}
-              style={{
-                textAlign: 'left',
-                cursor: 'pointer',
-                borderColor: mode === 'custom' ? '#a855f7' : '#263147',
-                background: mode === 'custom' ? 'rgba(168, 85, 247, 0.14)' : '#161d2c',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700, color: '#e9d5ff', fontSize: '0.95rem' }}>
-                  โหมดสร้างตัวละครเอง (Custom Race)
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: 4 }}>
-                  ตั้งชื่อและเลือกเผ่าพันธุ์จาก 6 เผ่าในโลกของเขาวงกตได้ตามใจ
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {mode === 'custom' && (
-          <div className="card">
+      {/* Left Grimoire Page */}
+      <div className="card setup-page">
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div>
             <h2>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                <User size={17} /> ชื่อและเผ่าพันธุ์
+                <BookOpen size={17} /> เลือกโหมดการผจญภัย
               </span>
+              <span className="badge">บทที่ 1 · ลาฟโดเนีย</span>
             </h2>
-
-            <div style={{ marginBottom: 12 }}>
-              <label
-                htmlFor="custom-name-input"
-                style={{ display: 'block', fontSize: '0.82rem', marginBottom: 5, color: '#cbd5e1' }}
-              >
-                ชื่อนักสำรวจ (Explorer Name)
-              </label>
-              <input
-                id="custom-name-input"
-                type="text"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="เช่น Hansu, Ainar, Erwen..."
-                style={{
-                  width: '100%',
-                  maxWidth: 320,
-                  padding: '8px 10px',
-                  borderRadius: 7,
-                  border: '1px solid #263147',
-                  background: '#07090e',
-                  color: '#eef2f8',
-                  fontSize: '0.88rem',
-                }}
-              />
-            </div>
 
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))',
-                gap: 8,
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: 10,
               }}
             >
-              {RACE_ORDER.map((id) => {
-                const r = RACES[id];
-                const active = raceId === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    className="shop-item"
-                    onClick={() => setRaceId(id)}
-                    style={{
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      padding: 9,
-                      borderColor: active ? '#f59e0b' : '#263147',
-                      background: active ? '#1e273a' : '#161d2c',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <button
+                type="button"
+                className={`mode-card ${mode === 'story' ? 'mode-card-active' : ''}`}
+                onClick={() => setMode('story')}
+              >
+                <div style={{ fontWeight: 700, color: 'var(--accent-bright)', fontSize: '0.96rem' }}>
+                  โหมดเนื้อเรื่อง (Story Mode)
+                </div>
+                <div style={{ fontSize: '0.84rem', color: '#e6dac8' }}>
+                  รับบทเป็น <strong>Bjorn Yandel</strong> เผ่าคนเถื่อน (Barbarian) ตามเส้นเรื่องหลักของ Dungeon &amp; Stone
+                </div>
+              </button>
+
+              <button
+                type="button"
+                className={`mode-card ${mode === 'custom' ? 'mode-card-active' : ''}`}
+                onClick={() => setMode('custom')}
+              >
+                <div style={{ fontWeight: 700, color: mode === 'custom' ? '#fde68a' : '#e9d8fd', fontSize: '0.96rem' }}>
+                  โหมดสร้างตัวละครเอง (Custom Race)
+                </div>
+                <div style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>
+                  ตั้งชื่อและเลือกเผ่าพันธุ์จากทั้ง 6 เผ่าในโลกเขาวงกตได้ตามต้องการ
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {mode === 'story' ? (
+            <div style={{ display: 'grid', gap: 11 }}>
+              <div className="chronicle-quote">
+                “9 ปีที่เล่นเกม Dungeon &amp; Stone จบลงในพริบตา เมื่อลืมตาตื่นขึ้นในร่างนักรบคนเถื่อน บียอร์น แย็นเดล ณ เมืองลาฟโดเนีย — ที่นี่ไม่มีคำสั่งรีสตาร์ท มีเพียงชีวิตจริง เขาวงกตที่เปิดเพียงเดือนละ 7 วัน และกฎเหล็กของผู้รอดชีวิต”
+              </div>
+
+              <div className="tenets-grid">
+                <div className="tenet-box">
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fde68a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Coins size={15} color="#e0a94c" /> ภาษีราชวงศ์ 7 วัน
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                    ต้องชำระภาษี 200 G ภายในวันที่ 7 หากค้างชำระเกินกำหนดจะถูกประหารชีวิตตามกฎหมายอาณาจักร
+                  </div>
+                </div>
+
+                <div className="tenet-box">
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#e9d8fd', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Sparkles size={15} color="#b794f4" /> แก่นแท้ 33 ชนิด &amp; ข้อเสีย
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                    ดูดซับเสริมพลังและผสาน Synergy 5 สาย แต่แทบทุกชิ้นมีผลข้างเคียง — สืบข่าวร้านเหล้าหรือซื้อตำรากิลด์ก่อนเสี่ยง!
+                  </div>
+                </div>
+
+                <div className="tenet-box">
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#9ae6b4', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Flame size={15} color="#48bb78" /> หมอกสงคราม &amp; แคนนิบาโล
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                    จุดคบไฟเปิดระยะสายตาและหาประตูมิติลงชั้นถัดไป (▼) อย่าแช่อยู่ชั้นเดิมนานเกินไปไม่งั้นแคนนิบาโลจะออกมาล่า!
+                  </div>
+                </div>
+
+                <div className="tenet-box">
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#90cdf4', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Compass size={15} color="#63b3ed" /> โนอาร์ค &amp; โรงประมูล
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                    ปลดล็อกชั้น 2 เพื่อเปิดทางสู่ตลาดมืดโนอาร์ค, ประมูลแก่นแท้หายาก และจ้างปาร์ตี้ตัวละครหลัก + นักสำรวจสุ่มรายวัน
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div>
+                <label
+                  htmlFor="custom-name-input"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.86rem', marginBottom: 5, color: '#e6dac8', fontWeight: 600 }}
+                >
+                  <User size={15} color="var(--accent-bright)" /> ชื่อนักสำรวจ (Explorer Name)
+                </label>
+                <input
+                  id="custom-name-input"
+                  type="text"
+                  className="grimoire-input"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="เช่น Hansu, Ainar, Erwen..."
+                />
+              </div>
+
+              <div className="race-grid-6">
+                {RACE_ORDER.map((id) => {
+                  const r = RACES[id];
+                  const active = raceId === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`race-card ${active ? 'race-card-active' : ''}`}
+                      onClick={() => setRaceId(id)}
+                    >
                       <div className="portrait-frame portrait-sm">
                         <img
                           src={r.portraitUrl}
@@ -152,83 +162,114 @@ export function SetupView({ onStartGame }: SetupViewProps) {
                           className="portrait-img"
                         />
                       </div>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.84rem', color: active ? '#fbbf24' : '#eef2f8' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem', color: active ? '#fde68a' : 'var(--text)' }}>
                           {r.name}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: '#8b9bb4' }}>
-                          HP {r.maxHp} · STR {r.baseStats.physique.strength}
+                        <div style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
+                          HP {r.maxHp} · STR {r.baseStats.physique.strength} · MP {r.baseStats.spirit.manaPool}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: '#e0a94c' }}>
+                          เรทซื้อ {Math.round(r.merchantBuyMultiplier * 100)}%
                         </div>
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      <div className="card setup-pane" style={{ borderColor: 'rgba(245, 158, 11, 0.35)' }}>
-        <h2>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            <Sparkles size={17} /> ข้อมูลตัวละครที่เลือก
-          </span>
-          <span className="badge">{selectedRace.name}</span>
-        </h2>
-
-        <div className="portrait-frame portrait-lg" style={{ marginBottom: 14 }}>
-          <img
-            src={selectedRace.portraitUrl}
-            alt={selectedRace.thaiName}
-            className="portrait-img"
-          />
-        </div>
-
-        <div style={{ textAlign: 'center', marginBottom: 12 }}>
-          <div style={{ fontSize: '1.08rem', fontWeight: 700, color: '#fbbf24' }}>
-            {mode === 'story'
-              ? 'Bjorn Yandel'
-              : customName.trim() || `Explorer (${selectedRace.name})`}
-          </div>
-          <div style={{ fontSize: '0.82rem', color: '#8b9bb4' }}>{selectedRace.thaiName}</div>
-        </div>
-
-        <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: '0 0 12px' }}>
-          {selectedRace.description}
-        </p>
-
-        <div className="stat-grid" style={{ marginBottom: 10 }}>
-          <div className="stat-box">HP: {selectedRace.maxHp}</div>
-          <div className="stat-box">Mana: {selectedRace.baseStats.spirit.manaPool}</div>
-          <div className="stat-box">Strength: {selectedRace.baseStats.physique.strength}</div>
-          <div className="stat-box">Flexibility: {selectedRace.baseStats.physique.flexibility}</div>
-          <div className="stat-box">Vision: {selectedRace.baseStats.physique.vision}</div>
-          <div className="stat-box">
-            ตลาด: {Math.round(selectedRace.merchantBuyMultiplier * 100)}% /{' '}
-            {Math.round(selectedRace.merchantSellMultiplier * 100)}%
-          </div>
+          )}
         </div>
 
         <div
           className="stat-box"
-          style={{ marginBottom: 14, borderColor: 'rgba(59, 130, 246, 0.4)' }}
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: '0.82rem',
+            color: 'var(--muted)',
+          }}
         >
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#93c5fd' }}>
-            สกิลเผ่า: {selectedRace.racialSkillName} ({selectedRace.racialSkillCost} MP)
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#e6dac8' }}>
+            <ShieldAlert size={14} color="var(--accent-bright)" /> คำเตือน: โหมดเขาวงกตไม่มีโหลดเซฟย้อนหลังเมื่อสิ้นใจ (Permadeath)
+          </span>
+          <span>7 ชั้น + 3 รอยแยก · 33 แก่นแท้ · Hotbar 1–5</span>
+        </div>
+      </div>
+
+      {/* Right Grimoire Page */}
+      <div className="card setup-page" style={{ borderColor: 'var(--border-gold)' }}>
+        <div style={{ display: 'grid', gap: 10 }}>
+          <h2>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <Sparkles size={17} /> บันทึกข้อมูลตัวละคร
+            </span>
+            <span className="badge badge-lore">{selectedRace.name}</span>
+          </h2>
+
+          <div className="portrait-frame portrait-hero">
+            <img
+              src={selectedRace.portraitUrl}
+              alt={selectedRace.thaiName}
+              className="portrait-img"
+            />
           </div>
-          <div style={{ fontSize: '0.76rem', color: '#cbd5e1', marginTop: 2 }}>
-            {selectedRace.racialSkillDesc}
+
+          <div style={{ textAlign: 'center' }}>
+            <div
+              className="font-display"
+              style={{ fontSize: '1.24rem', fontWeight: 800, color: 'var(--accent-bright)' }}
+            >
+              {mode === 'story'
+                ? 'Bjorn Yandel'
+                : customName.trim() || `Explorer (${selectedRace.name})`}
+            </div>
+            <div style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>{selectedRace.thaiName}</div>
+          </div>
+
+          <p style={{ fontSize: '0.85rem', color: '#e6dac8', margin: 0, textAlign: 'center' }}>
+            {selectedRace.description}
+          </p>
+
+          <div className="stat-grid">
+            <div className="rune-stat"><span className="rune-label">HP</span><strong>{selectedRace.maxHp}</strong></div>
+            <div className="rune-stat"><span className="rune-label">MANA</span><strong>{selectedRace.baseStats.spirit.manaPool}</strong></div>
+            <div className="rune-stat"><span className="rune-label">STR</span><strong>{selectedRace.baseStats.physique.strength}</strong></div>
+            <div className="rune-stat"><span className="rune-label">FLEX</span><strong>{selectedRace.baseStats.physique.flexibility}</strong></div>
+            <div className="rune-stat"><span className="rune-label">VIS</span><strong>{selectedRace.baseStats.physique.vision}</strong></div>
+            <div className="rune-stat">
+              <span className="rune-label">ตลาด</span>
+              <strong>
+                {Math.round(selectedRace.merchantBuyMultiplier * 100)}/{Math.round(selectedRace.merchantSellMultiplier * 100)}%
+              </strong>
+            </div>
+          </div>
+
+          <div className="racial-skill-box">
+            <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#fde68a' }}>
+              สกิลเผ่า: {selectedRace.racialSkillName} ({selectedRace.racialSkillCost} MP)
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#e6dac8', marginTop: 2 }}>
+              {selectedRace.racialSkillDesc}
+            </div>
           </div>
         </div>
 
-        <button
-          className="btn btn-primary"
-          style={{ width: '100%', padding: '10px 14px', fontSize: '0.92rem' }}
-          onClick={() => onStartGame(mode, raceId, customName)}
-        >
-          <Swords size={16} /> เริ่มเกมเข้าสู่เมือง Rafdonia
-        </button>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: '0.79rem', color: 'var(--muted)', textAlign: 'center' }}>
+            สัมภาระเริ่มต้น: กระบองไม้ · เกราะหนัง · เสบียง x3 · โพชั่น x1 · คบไฟ x1 · 80 Gold
+          </div>
+          <button
+            className="btn btn-primary"
+            style={{ width: '100%', padding: '11px 14px', fontSize: '0.96rem' }}
+            onClick={() => onStartGame(mode, raceId, customName)}
+          >
+            <Swords size={17} /> เริ่มการผจญภัยเข้าสู่เมืองลาฟโดเนีย (Lafdonia)
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,23 +1,44 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, Coins, RotateCcw, ScrollText, Swords } from 'lucide-react';
+import {
+  ChevronDown,
+  Coins,
+  RotateCcw,
+  ScrollText,
+  Swords,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { CharacterPanel } from './components/CharacterPanel';
 import { CityView } from './components/CityView';
+import { CommunityModal } from './components/CommunityModal';
 import { LabyrinthView } from './components/LabyrinthView';
 import { LoadoutModal, LoadoutTab } from './components/LoadoutModal';
 import { SetupView } from './components/SetupView';
 import {
+  absorbStoredVial,
   advanceClosedCycle,
+  auctionSellEssenceVial,
+  buyAuctionEssence,
+  buyCommunityOffer,
+  buyEssenceBook,
   buyItemInCity,
   buyRank7Lore,
+  buyRoundAtTavern,
+  claimStoryQuest,
   dismissPartyMember,
+  drinkAtTavern,
   extractEssenceAtTemple,
+  freeTavernGossip,
   hirePartyMember,
   payTaxInCity,
   purifyCursesAtTemple,
+  refreshDailyNews,
   repairArmorInCity,
+  rerollTavernMercenaries,
   restAtInn,
   sellAllMagicStones,
   sellEssenceVial,
+  switchCity,
   useGamerKnowledge,
 } from './engine/cityActions';
 import {
@@ -30,18 +51,22 @@ import {
   enterLabyrinth,
   enterRift,
   equipItemFromInventory,
+  exitRiftToFloor,
+  giveEssenceToPartyMember,
   resolveRandomEvent,
   returnToCity,
   startGameWithSetup,
   stepPlayer,
   useConsumable,
 } from './engine/gameEngine';
+import { playSfx, SfxType } from './engine/sound';
 import { clearSavedGame, loadGameState, saveGameState } from './engine/storage';
 
 export default function App() {
   const [state, setState] = useState(() => loadGameState() ?? createInitialGameState());
   const [showAllLogs, setShowAllLogs] = useState(false);
   const [loadoutTab, setLoadoutTab] = useState<LoadoutTab | null>(null);
+  const [showCommunity, setShowCommunity] = useState(false);
 
   useEffect(() => {
     if (state.phase !== 'setup') {
@@ -50,17 +75,25 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
+    if (!state.lastSfx) return;
+    const sfxType = state.lastSfx.split(':')[0] as SfxType;
+    playSfx(sfxType, state.soundMuted);
+  }, [state.lastSfx, state.soundMuted]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (state.phase === 'setup') return;
-      if (e.key === 'Escape' && loadoutTab) {
-        setLoadoutTab(null);
+      if (e.key === 'Escape') {
+        if (loadoutTab) setLoadoutTab(null);
+        if (showCommunity) setShowCommunity(false);
       } else if ((e.key === 'i' || e.key === 'I') && !state.activeEvent) {
+        setShowCommunity(false);
         setLoadoutTab((prev) => (prev ? null : 'gear'));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [state.phase, state.activeEvent, loadoutTab]);
+  }, [state.phase, state.activeEvent, loadoutTab, showCommunity]);
 
   const handleMove = useCallback((dx: number, dy: number) => {
     setState((prev) => stepPlayer(prev, dx, dy));
@@ -69,13 +102,16 @@ export default function App() {
   const handleResetGame = () => {
     clearSavedGame();
     setLoadoutTab(null);
+    setShowCommunity(false);
     setState(createInitialGameState());
   };
 
   const visibleLogs = showAllLogs ? state.logs : state.logs.slice(0, 2);
 
+  const isNoarkTheme = state.phase === 'city' && state.cityId === 'noark';
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isNoarkTheme ? 'theme-noark' : ''}`}>
       <header className="top-bar">
         <div className="title-group">
           <h1>
@@ -92,6 +128,16 @@ export default function App() {
               <button
                 type="button"
                 className="btn btn-sm"
+                onClick={() =>
+                  setState((prev) => ({ ...prev, soundMuted: !prev.soundMuted }))
+                }
+                title="เปิด/ปิดเสียงประกอบ"
+              >
+                {state.soundMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
                 onClick={handleResetGame}
                 title="ล้างเซฟและเริ่มใหม่"
               >
@@ -103,10 +149,12 @@ export default function App() {
             {state.phase === 'setup'
               ? 'เลือกโหมดและเผ่าพันธุ์'
               : state.phase === 'city'
-                ? 'เมืองลาฟโดเนีย'
+                ? state.cityId === 'noark'
+                  ? 'เมืองใต้ดินโนอาร์ค'
+                  : 'เมืองลาฟโดเนีย'
                 : state.phase === 'labyrinth'
                   ? state.inRift
-                    ? 'รอยแยกชั้นที่ 1'
+                    ? 'รอยแยก'
                     : `เขาวงกตชั้นที่ ${state.currentFloor}`
                   : 'Game Over'}
           </div>
@@ -128,9 +176,11 @@ export default function App() {
               {state.phase === 'city' && (
                 <CityView
                   state={state}
-                  onBuyItem={(id) => setState((prev) => buyItemInCity(prev, id))}
+                  onBuyItem={(id, qty) => setState((prev) => buyItemInCity(prev, id, qty))}
                   onSellStones={() => setState((prev) => sellAllMagicStones(prev))}
                   onSellVial={(uid) => setState((prev) => sellEssenceVial(prev, uid))}
+                  onAuctionSellVial={(uid) => setState((prev) => auctionSellEssenceVial(prev, uid))}
+                  onBuyAuctionEssence={(lid) => setState((prev) => buyAuctionEssence(prev, lid))}
                   onHireParty={(id) => setState((prev) => hirePartyMember(prev, id))}
                   onDismissParty={(id) => setState((prev) => dismissPartyMember(prev, id))}
                   onPayTax={() => setState((prev) => payTaxInCity(prev))}
@@ -142,6 +192,14 @@ export default function App() {
                   onRestInn={() => setState((prev) => restAtInn(prev))}
                   onAdvanceClosedCycle={() => setState((prev) => advanceClosedCycle(prev))}
                   onEnterLabyrinth={(floor) => setState((prev) => enterLabyrinth(prev, floor))}
+                  onSwitchCity={(city) => setState((prev) => switchCity(prev, city))}
+                  onOpenCommunity={() => setShowCommunity(true)}
+                  onRefreshNews={() => setState((prev) => refreshDailyNews(prev))}
+                  onFreeTavernGossip={() => setState((prev) => freeTavernGossip(prev))}
+                  onDrinkTavern={() => setState((prev) => drinkAtTavern(prev))}
+                  onBuyRoundTavern={() => setState((prev) => buyRoundAtTavern(prev))}
+                  onBuyEssenceBook={(tier) => setState((prev) => buyEssenceBook(prev, tier))}
+                  onRerollMercenaries={() => setState((prev) => rerollTavernMercenaries(prev))}
                 />
               )}
 
@@ -150,12 +208,17 @@ export default function App() {
                   state={state}
                   onMove={handleMove}
                   onReturnToCity={() => setState((prev) => returnToCity(prev))}
+                  onExitRiftToFloor={() => setState((prev) => exitRiftToFloor(prev))}
                   onDescendFloor={() => setState((prev) => descendNextFloor(prev))}
                   onEnterRift={() => setState((prev) => enterRift(prev))}
                   onRacialSkill={() => setState((prev) => activateRacialSkill(prev))}
                   onActivateEssence={(id) => setState((prev) => activateEssenceSkill(prev, id))}
                   onAbsorbEssence={(uid) => setState((prev) => absorbDroppedEssence(prev, uid))}
+                  onGiveEssenceToAlly={(uid, memberId) =>
+                    setState((prev) => giveEssenceToPartyMember(prev, uid, memberId))
+                  }
                   onBottleEssence={(uid) => setState((prev) => bottleDroppedEssence(prev, uid))}
+                  onUseConsumable={(itemId) => setState((prev) => useConsumable(prev, itemId))}
                 />
               )}
 
@@ -225,6 +288,16 @@ export default function App() {
           onClose={() => setLoadoutTab(null)}
           onUseConsumable={(id) => setState((prev) => useConsumable(prev, id))}
           onEquipItem={(id) => setState((prev) => equipItemFromInventory(prev, id))}
+          onAbsorbStoredVial={(uid) => setState((prev) => absorbStoredVial(prev, uid))}
+        />
+      )}
+
+      {showCommunity && (
+        <CommunityModal
+          state={state}
+          onClose={() => setShowCommunity(false)}
+          onClaimQuest={(qid) => setState((prev) => claimStoryQuest(prev, qid))}
+          onBuyOffer={(oid) => setState((prev) => buyCommunityOffer(prev, oid))}
         />
       )}
 
