@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+เนื้อเรื่อง/
+lore/_raw/
+lore/_raw_early/
